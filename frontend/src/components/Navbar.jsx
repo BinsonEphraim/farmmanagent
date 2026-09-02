@@ -22,6 +22,9 @@ const Navbar = () => {
           {isAuthenticated ? (
             <>
               <span style={styles.user}>Welcome, {user?.firstName}</span>
+              {user?.role === 'Administrator' && (
+                <Link to="/users" style={styles.link}>Users</Link>
+              )}
               <button onClick={handleLogout} style={styles.logout}>
                 Logout
               </button>
@@ -30,6 +33,7 @@ const Navbar = () => {
             <>
               <Link to="/login" style={styles.link}>Login</Link>
               <Link to="/register" style={styles.link}>Register</Link>
+              <Link to="/farms" style={styles.link}>Farms</Link>
             </>
           )}
         </div>

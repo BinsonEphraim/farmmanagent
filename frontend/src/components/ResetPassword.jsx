@@ -1,23 +1,49 @@
-import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const Login = () => {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+const ResetPassword = () => {
+  const [searchParams] = useSearchParams();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, error } = useAuth();
+  const [token, setToken] = useState('');
+  const { resetPassword, error } = useAuth();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const tokenParam = searchParams.get('token');
+    if (tokenParam) {
+      setToken(tokenParam);
+    } else {
+      setMessage('Invalid reset link. Please try again.');
+    }
+  }, [searchParams]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     
-    const result = await login(email, password, rememberMe);
+    if (newPassword !== confirmPassword) {
+      setMessage('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setMessage('Password must be at least 6 characters');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+
+    const result = await resetPassword(token, newPassword);
     
     if (result.success) {
-      navigate('/dashboard');
+      setMessage('Password reset successfully! Redirecting to login...');
+      setTimeout(() => {
+        navigate('/login');
+      }, 3000);
     }
     setLoading(false);
   };
@@ -25,64 +51,53 @@ const Login = () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Login</h1>
-        <p style={styles.subtitle}>Welcome back to UFMS</p>
+        <h1 style={styles.title}>Reset Password</h1>
+        <p style={styles.subtitle}>Enter your new password</p>
 
         {error && <div style={styles.error}>{error}</div>}
+        {message && (
+          <div style={message.includes('success') ? styles.success : styles.error}>
+            {message}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Email</label>
+            <label style={styles.label}>New Password</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              type="password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
               style={styles.input}
-              placeholder="Enter your email"
+              placeholder="Enter new password"
               required
+              minLength="6"
             />
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
+            <label style={styles.label}>Confirm Password</label>
             <input
               type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
               style={styles.input}
-              placeholder="Enter your password"
+              placeholder="Confirm new password"
               required
             />
-          </div>
-
-          <div style={styles.optionsRow}>
-            <div style={styles.checkboxGroup}>
-              <input
-                type="checkbox"
-                id="rememberMe"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <label htmlFor="rememberMe" style={styles.checkboxLabel}>
-                Remember me
-              </label>
-            </div>
-            <Link to="/forgot-password" style={styles.forgotLink}>
-              Forgot password?
-            </Link>
           </div>
 
           <button
             type="submit"
             style={styles.button}
-            disabled={loading}
+            disabled={loading || !token}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Resetting...' : 'Reset Password'}
           </button>
         </form>
 
         <p style={styles.footer}>
-          Don't have an account? <Link to="/register" style={styles.link}>Register</Link>
+          <Link to="/login" style={styles.link}>Back to Login</Link>
         </p>
       </div>
     </div>
@@ -136,27 +151,6 @@ const styles = {
     border: '1px solid #ddd',
     fontSize: '16px',
   },
-  optionsRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '-8px',
-  },
-  checkboxGroup: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  checkboxLabel: {
-    fontSize: '14px',
-    color: '#666',
-    cursor: 'pointer',
-  },
-  forgotLink: {
-    fontSize: '14px',
-    color: '#4CAF50',
-    textDecoration: 'none',
-  },
   button: {
     padding: '12px',
     backgroundColor: '#4CAF50',
@@ -174,6 +168,13 @@ const styles = {
     borderRadius: '4px',
     marginBottom: '16px',
   },
+  success: {
+    backgroundColor: '#e8f5e9',
+    color: '#2e7d32',
+    padding: '10px',
+    borderRadius: '4px',
+    marginBottom: '16px',
+  },
   footer: {
     textAlign: 'center',
     marginTop: '16px',
@@ -186,4 +187,4 @@ const styles = {
   },
 };
 
-export default Login;
+export default ResetPassword;

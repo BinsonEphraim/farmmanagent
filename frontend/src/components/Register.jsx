@@ -11,6 +11,9 @@ const Register = () => {
     roleName: 'Employee',
   });
   const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState('');
+  const [verificationLink, setVerificationLink] = useState('');
+  const [showVerificationMessage, setShowVerificationMessage] = useState(false);
   const { register, error } = useAuth();
   const navigate = useNavigate();
 
@@ -24,11 +27,18 @@ const Register = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setMessage('');
+    setVerificationLink('');
+    setShowVerificationMessage(false);
     
     const result = await register(formData);
     
     if (result.success) {
-      navigate('/dashboard');
+      // Show verification message instead of auto-login
+      setMessage('Registration successful! Please check your email to verify your account.');
+      setVerificationLink(result.data?.verificationLink || '');
+      setShowVerificationMessage(true);
+      // Don't navigate to dashboard - user needs to verify email first
     }
     setLoading(false);
   };
@@ -40,86 +50,105 @@ const Register = () => {
         <p style={styles.subtitle}>Create your UFMS account</p>
 
         {error && <div style={styles.error}>{error}</div>}
+        
+        {showVerificationMessage && (
+          <div style={styles.success}>
+            {message}
+            {verificationLink && (
+              <p style={{ marginTop: '10px' }}>
+                <a href={verificationLink} style={styles.link}>
+                  Open verification link
+                </a>
+              </p>
+            )}
+            <p style={{ marginTop: '10px' }}>
+              <Link to="/login" style={styles.link}>Go to Login</Link>
+            </p>
+          </div>
+        )}
 
-        <form onSubmit={handleSubmit} style={styles.form}>
-          <div style={styles.row}>
-            <div style={styles.halfInput}>
-              <label style={styles.label}>First Name</label>
+        {!showVerificationMessage && (
+          <form onSubmit={handleSubmit} style={styles.form}>
+            <div style={styles.row}>
+              <div style={styles.halfInput}>
+                <label style={styles.label}>First Name</label>
+                <input
+                  type="text"
+                  name="firstName"
+                  value={formData.firstName}
+                  onChange={handleChange}
+                  style={styles.input}
+                  placeholder="First name"
+                  required
+                />
+              </div>
+              <div style={styles.halfInput}>
+                <label style={styles.label}>Last Name</label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={formData.lastName}
+                  onChange={handleChange}
+                  style={styles.input}
+                  placeholder="Last name"
+                  required
+                />
+              </div>
+            </div>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Email</label>
               <input
-                type="text"
-                name="firstName"
-                value={formData.firstName}
+                type="email"
+                name="email"
+                value={formData.email}
                 onChange={handleChange}
                 style={styles.input}
-                placeholder="First name"
+                placeholder="Enter your email"
                 required
               />
             </div>
-            <div style={styles.halfInput}>
-              <label style={styles.label}>Last Name</label>
+
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Password</label>
               <input
-                type="text"
-                name="lastName"
-                value={formData.lastName}
+                type="password"
+                name="password"
+                value={formData.password}
                 onChange={handleChange}
                 style={styles.input}
-                placeholder="Last name"
+                placeholder="Enter your password (min 6 characters)"
                 required
+                minLength="6"
               />
             </div>
-          </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Email</label>
-            <input
-              type="email"
-              name="email"
-              value={formData.email}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Enter your email"
-              required
-            />
-          </div>
+            <div style={styles.inputGroup}>
+              <label style={styles.label}>Role</label>
+              <select
+                name="roleName"
+                value={formData.roleName}
+                onChange={handleChange}
+                style={styles.input}
+              >
+                <option value="Administrator">Administrator</option>
+                <option value="Managing Director">Managing Director</option>
+                <option value="Finance Manager">Finance Manager</option>
+                <option value="Farm Manager">Farm Manager</option>
+                <option value="HR Manager">HR Manager</option>
+                <option value="Employee">Employee</option>
+              </select>
+            </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              name="password"
-              value={formData.password}
-              onChange={handleChange}
-              style={styles.input}
-              placeholder="Enter your password"
-              required
-            />
-          </div>
-
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Role</label>
-            <select
-              name="roleName"
-              value={formData.roleName}
-              onChange={handleChange}
-              style={styles.input}
+            <button
+              type="submit"
+              style={styles.button}
+              disabled={loading}
             >
-              <option value="Administrator">Administrator</option>
-              <option value="Managing Director">Managing Director</option>
-              <option value="Finance Manager">Finance Manager</option>
-              <option value="Farm Manager">Farm Manager</option>
-              <option value="HR Manager">HR Manager</option>
-              <option value="Employee">Employee</option>
-            </select>
-          </div>
-
-          <button
-            type="submit"
-            style={styles.button}
-            disabled={loading}
-          >
-            {loading ? 'Registering...' : 'Register'}
-          </button>
-        </form>
+              {loading ? 'Registering...' : 'Register'}
+            </button>
+          </form>
+        )}
 
         <p style={styles.footer}>
           Already have an account? <Link to="/login" style={styles.link}>Login</Link>
@@ -202,6 +231,14 @@ const styles = {
     padding: '10px',
     borderRadius: '4px',
     marginBottom: '16px',
+  },
+  success: {
+    backgroundColor: '#e8f5e9',
+    color: '#2e7d32',
+    padding: '16px',
+    borderRadius: '4px',
+    marginBottom: '16px',
+    textAlign: 'center',
   },
   footer: {
     textAlign: 'center',

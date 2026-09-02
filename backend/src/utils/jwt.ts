@@ -1,13 +1,26 @@
 import jwt, { type JwtPayload, type Secret, type SignOptions } from 'jsonwebtoken';
+import crypto from 'crypto';
 
 const JWT_SECRET: Secret = (process.env.JWT_SECRET as Secret) || 'your-secret-key-change-in-production';
 const JWT_EXPIRES_IN: SignOptions['expiresIn'] =
   (process.env.JWT_EXPIRES_IN as SignOptions['expiresIn']) || '7d';
+const JWT_REMEMBER_EXPIRES_IN: SignOptions['expiresIn'] =
+  (process.env.JWT_REMEMBER_EXPIRES_IN as SignOptions['expiresIn']) || '30d';
 
-export const generateToken = (userId: number, email: string, roleId: number): string => {
+// ============================================
+// EXISTING FUNCTIONS - Updated with remember me
+// ============================================
+
+export const generateToken = (
+  userId: number, 
+  email: string, 
+  roleId: number, 
+  rememberMe: boolean = false
+): string => {
   const payload = { userId, email, roleId };
+  const expiresIn = rememberMe ? JWT_REMEMBER_EXPIRES_IN : JWT_EXPIRES_IN;
 
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+  return jwt.sign(payload, JWT_SECRET, { expiresIn });
 };
 
 export const verifyToken = (token: string): string | JwtPayload | null => {
@@ -16,4 +29,20 @@ export const verifyToken = (token: string): string | JwtPayload | null => {
   } catch {
     return null;
   }
+};
+
+export const generateRandomToken = (): string => {
+  return crypto.randomBytes(32).toString('hex');
+};
+
+export const generateVerificationToken = () => {
+  const token = generateRandomToken();
+  const expires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+  return { token, expires };
+};
+
+export const generateResetToken = () => {
+  const token = generateRandomToken();
+  const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  return { token, expires };
 };

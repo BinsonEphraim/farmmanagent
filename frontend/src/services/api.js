@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000/api';
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
 // Create axios instance
 const api = axios.create({
@@ -36,9 +36,39 @@ export const authService = {
     return response.data;
   },
 
+  // Verify email
+  verifyEmail: async (token) => {
+    const response = await api.get('/auth/verify-email', { params: { token } });
+    return response.data;
+  },
+
+  // Forgot password
+  forgotPassword: async (email) => {
+    const response = await api.post('/auth/forgot-password', { email });
+    return response.data;
+  },
+
+  // Reset password
+  resetPassword: async (token, newPassword) => {
+    const response = await api.post('/auth/reset-password', { token, newPassword });
+    return response.data;
+  },
+
+  // Resend verification email
+  resendVerification: async (email) => {
+    const response = await api.post('/auth/resend-verification', { email });
+    return response.data;
+  },
+
   // Get user profile
   getProfile: async () => {
     const response = await api.get('/auth/profile');
+    return response.data;
+  },
+
+  // Update user profile
+  updateProfile: async (profileData) => {
+    const response = await api.put('/auth/profile', profileData);
     return response.data;
   },
 

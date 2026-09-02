@@ -1,23 +1,22 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
-const Login = () => {
+const ForgotPassword = () => {
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
-  const { login, error } = useAuth();
-  const navigate = useNavigate();
+  const { forgotPassword, error } = useAuth();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
-    
-    const result = await login(email, password, rememberMe);
+    setMessage('');
+
+    const result = await forgotPassword(email);
     
     if (result.success) {
-      navigate('/dashboard');
+      setMessage('If an account exists with this email, you will receive a password reset link.');
     }
     setLoading(false);
   };
@@ -25,10 +24,11 @@ const Login = () => {
   return (
     <div style={styles.container}>
       <div style={styles.card}>
-        <h1 style={styles.title}>Login</h1>
-        <p style={styles.subtitle}>Welcome back to UFMS</p>
+        <h1 style={styles.title}>Forgot Password</h1>
+        <p style={styles.subtitle}>Enter your email to receive a reset link</p>
 
         {error && <div style={styles.error}>{error}</div>}
+        {message && <div style={styles.success}>{message}</div>}
 
         <form onSubmit={handleSubmit} style={styles.form}>
           <div style={styles.inputGroup}>
@@ -43,46 +43,17 @@ const Login = () => {
             />
           </div>
 
-          <div style={styles.inputGroup}>
-            <label style={styles.label}>Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              style={styles.input}
-              placeholder="Enter your password"
-              required
-            />
-          </div>
-
-          <div style={styles.optionsRow}>
-            <div style={styles.checkboxGroup}>
-              <input
-                type="checkbox"
-                id="rememberMe"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <label htmlFor="rememberMe" style={styles.checkboxLabel}>
-                Remember me
-              </label>
-            </div>
-            <Link to="/forgot-password" style={styles.forgotLink}>
-              Forgot password?
-            </Link>
-          </div>
-
           <button
             type="submit"
             style={styles.button}
             disabled={loading}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Sending...' : 'Send Reset Link'}
           </button>
         </form>
 
         <p style={styles.footer}>
-          Don't have an account? <Link to="/register" style={styles.link}>Register</Link>
+          Remember your password? <Link to="/login" style={styles.link}>Login</Link>
         </p>
       </div>
     </div>
@@ -136,27 +107,6 @@ const styles = {
     border: '1px solid #ddd',
     fontSize: '16px',
   },
-  optionsRow: {
-    display: 'flex',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginTop: '-8px',
-  },
-  checkboxGroup: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-  },
-  checkboxLabel: {
-    fontSize: '14px',
-    color: '#666',
-    cursor: 'pointer',
-  },
-  forgotLink: {
-    fontSize: '14px',
-    color: '#4CAF50',
-    textDecoration: 'none',
-  },
   button: {
     padding: '12px',
     backgroundColor: '#4CAF50',
@@ -174,6 +124,13 @@ const styles = {
     borderRadius: '4px',
     marginBottom: '16px',
   },
+  success: {
+    backgroundColor: '#e8f5e9',
+    color: '#2e7d32',
+    padding: '10px',
+    borderRadius: '4px',
+    marginBottom: '16px',
+  },
   footer: {
     textAlign: 'center',
     marginTop: '16px',
@@ -186,4 +143,4 @@ const styles = {
   },
 };
 
-export default Login;
+export default ForgotPassword;

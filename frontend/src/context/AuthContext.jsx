@@ -21,40 +21,120 @@ export const AuthProvider = ({ children }) => {
     setLoading(false);
   }, []);
 
-  const login = async (email, password) => {
+  // Login with remember me
+  const login = async (email, password, rememberMe = false) => {
     try {
       setError(null);
-      const data = await authService.login({ email, password });
+      const data = await authService.login({ email, password, rememberMe });
       
       // Save token and user
       localStorage.setItem('token', data.token);
       localStorage.setItem('user', JSON.stringify(data.user));
       
+      if (rememberMe) {
+        localStorage.setItem('rememberMe', 'true');
+      } else {
+        localStorage.removeItem('rememberMe');
+      }
+      
       setUser(data.user);
       return { success: true, data };
     } catch (err) {
-      setError(err.response?.data?.error || 'Login failed');
-      return { success: false, error: err.response?.data?.error || 'Login failed' };
+      const errorMsg = err.response?.data?.error || 'Login failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
     }
   };
 
+  // Register with email verification
   const register = async (userData) => {
     try {
       setError(null);
       const data = await authService.register(userData);
       
-      // Save token and user
-      localStorage.setItem('token', data.token);
-      localStorage.setItem('user', JSON.stringify(data.user));
-      
-      setUser(data.user);
+      // Don't auto-login - user needs to verify email first
       return { success: true, data };
     } catch (err) {
-      setError(err.response?.data?.error || 'Registration failed');
-      return { success: false, error: err.response?.data?.error || 'Registration failed' };
+      const errorMsg = err.response?.data?.error || 'Registration failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
     }
   };
 
+  // Verify email
+  const verifyEmail = async (token) => {
+    try {
+      setError(null);
+      const data = await authService.verifyEmail(token);
+      return { success: true, data };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || err.message || 'Verification failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Forgot password
+  const forgotPassword = async (email) => {
+    try {
+      setError(null);
+      const data = await authService.forgotPassword(email);
+      return { success: true, data };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to send reset link';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Reset password
+  const resetPassword = async (token, newPassword) => {
+    try {
+      setError(null);
+      const data = await authService.resetPassword(token, newPassword);
+      return { success: true, data };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Password reset failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Update profile
+  const updateProfile = async (profileData) => {
+    try {
+      setError(null);
+      const data = await authService.updateProfile(profileData);
+      
+      // Update stored user data
+      if (data.user) {
+        const updatedUser = { ...user, ...data.user };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        setUser(updatedUser);
+      }
+      
+      return { success: true, data };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Profile update failed';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Resend verification email
+  const resendVerification = async (email) => {
+    try {
+      setError(null);
+      const data = await authService.resendVerification(email);
+      return { success: true, data };
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to resend verification';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    }
+  };
+
+  // Logout
   const logout = () => {
     authService.logout();
     setUser(null);
@@ -66,6 +146,11 @@ export const AuthProvider = ({ children }) => {
     error,
     login,
     register,
+    verifyEmail,
+    forgotPassword,
+    resetPassword,
+    updateProfile,
+    resendVerification,
     logout,
     isAuthenticated: !!user,
   };
