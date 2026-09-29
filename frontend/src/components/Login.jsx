@@ -82,7 +82,7 @@ const Login = () => {
         </form>
 
         <p style={styles.footer}>
-          Don't have an account? <Link to="/register" style={styles.link}>Register</Link>
+          Accounts are created by an administrator.
         </p>
       </div>
     </div>

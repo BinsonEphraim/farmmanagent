@@ -13,9 +13,11 @@ model User {
   firstName String
   lastName  String
   roleId    Int
+  farmId    Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   role      Role     @relation(fields: [roleId], references: [id])
+  farm      Farm?    @relation("FarmWorkers", fields: [farmId], references: [id], onDelete: SetNull)
   
   isVerified            Boolean  @default(false)
   isActive              Boolean  @default(true)
@@ -27,7 +29,10 @@ model User {
   rememberToken         String?  @unique
   
   // Farm relationships
-  farms     Farm[]
+  ownedFarms     Farm[]  @relation("FarmOwner")
+  attendanceLogs AttendanceLog[]
+  trainingEnrollments TrainingEnrollment[]
+  payrollRecords PayrollRecord[]
 }
 
 model Role {
@@ -37,6 +42,65 @@ model Role {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   users       User[]
+}
+
+model AttendanceLog {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date      DateTime
+  checkIn   DateTime?
+  checkOut  DateTime?
+  status    String   @default("PRESENT")
+  notes     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, date])
+  @@index([date])
+}
+
+model TrainingProgram {
+  id           Int      @id @default(autoincrement())
+  title        String
+  instructor   String?
+  scheduledDate DateTime
+  status       String   @default("UPCOMING")
+  description  String?
+  enrollments  TrainingEnrollment[]
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model TrainingEnrollment {
+  id         Int      @id @default(autoincrement())
+  programId  Int
+  userId     Int
+  program    TrainingProgram @relation(fields: [programId], references: [id], onDelete: Cascade)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status     String   @default("ENROLLED")
+  completedAt DateTime?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([programId, userId])
+}
+
+model PayrollRecord {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  period      String
+  grossAmount Float
+  deductions  Float    @default(0)
+  netAmount   Float
+  status      String   @default("PENDING")
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, period])
+  @@index([period])
 }
 
 // ============================================
@@ -50,12 +114,18 @@ model Farm {
   size        Float?   // Size in hectares
   description String?
   ownerId     Int
-  owner       User     @relation(fields: [ownerId], references: [id])
+  owner       User     @relation("FarmOwner", fields: [ownerId], references: [id])
+  assignedUsers User[] @relation("FarmWorkers")
   
   crops       Crop[]
   animals     Animal[]
   inventory   Inventory[]
   assets      Asset[]
+  transactions Transaction[]
+  invoices    Invoice[]
+  budgets     Budget[]
+  approvalRequests ApprovalRequest[]
+  activityLogs FarmActivityLog[]
   expenses    Expense[]
   revenues    Revenue[]
   
@@ -244,4 +314,178 @@ enum HealthStatus {
   SICK
   UNDER_TREATMENT
   QUARANTINED
+}
+
+// ============================================
+// FINANCE & ACCOUNTING MODELS
+// ============================================
+
+model Transaction {
+  id            Int                @id @default(autoincrement())
+  reference     String             @unique // INV-2025-0052, EXP-2025-0087, PAY-2025-0041, etc.
+  date          DateTime           @default(now())
+  description   String
+  category      String             // Sales Revenue, Farm Inputs, Payroll, Fuel & Transport, etc.
+  account       String             @default("Operating Account") // Sales Account, Operating Account, Payroll Account, etc.
+  type          TransactionType    @default(EXPENSE) // INCOME, EXPENSE
+  amount        Float
+  status        TransactionStatus  @default(COMPLETED)
+  farmId        Int?
+  farm          Farm?              @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  invoiceId     Int?
+  invoice       Invoice?           @relation(fields: [invoiceId], references: [id], onDelete: SetNull)
+  paymentMethod String?            @default("Bank Transfer")
+  notes         String?
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model Invoice {
+  id            Int                @id @default(autoincrement())
+  invoiceNumber String             @unique // INV-2025-0052, etc.
+  title         String
+  customer      String?
+  customerEmail String?
+  issueDate     DateTime           @default(now())
+  dueDate       DateTime
+  amount        Float
+  paidAmount    Float              @default(0)
+  status        InvoiceStatus      @default(PENDING)
+  type          InvoiceType        @default(RECEIVABLE)
+  farmId        Int?
+  farm          Farm?              @relation(fields: [farmId], references: [id], onDelete: SetNull)
+  notes         String?
+  
+  transactions  Transaction[]
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+model Budget {
+  id              Int              @id @default(autoincrement())
+  name            String
+  category        String
+  allocatedAmount Float
+  spentAmount     Float            @default(0)
+  period          String           @default("2025 Season A")
+  startDate       DateTime
+  endDate         DateTime
+  farmId          Int?
+  farm            Farm?            @relation(fields: [farmId], references: [id], onDelete: SetNull)
+
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+}
+
+model FinancialAccount {
+  id            Int                @id @default(autoincrement())
+  name          String             @unique // Operating Account, Sales Account, Payroll Account, etc.
+  accountNumber String?
+  bankName      String?
+  balance       Float              @default(0)
+  type          String             @default("Checking") // Checking, Savings, Cash, Credit
+
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionStatus {
+  COMPLETED
+  PENDING
+  CANCELLED
+  FAILED
+}
+
+enum InvoiceStatus {
+  PAID
+  SENT
+  PENDING
+  OVERDUE
+  DRAFT
+  CANCELLED
+}
+
+enum InvoiceType {
+  RECEIVABLE
+  PAYABLE
+}
+
+// ============================================
+// MANAGING DIRECTOR & EXECUTIVE MODELS
+// ============================================
+
+model ApprovalRequest {
+  id          Int            @id @default(autoincrement())
+  title       String         // e.g. "Project Budget Approval - Green Valley Farm"
+  category    String         // e.g. "Budget", "Procurement", "HR", "Finance", "Asset"
+  requestedBy String?        // e.g. "Operations Manager", "Agronomist"
+  amount      Float?
+  meta        String?        // e.g. "$25,000", "3 days", "$12,500"
+  status      ApprovalStatus @default(PENDING) // PENDING, FOR_REVIEW, APPROVED, REJECTED
+  date        DateTime       @default(now())
+  farmId      Int?
+  farm        Farm?          @relation(fields: [farmId], references: [id], onDelete: SetNull)
+
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+}
+
+model StrategicGoal {
+  id             Int        @id @default(autoincrement())
+  title          String     // e.g. "Increase crop production"
+  target         String     // e.g. "Target: 600 tons"
+  currentValue   Float
+  targetValue    Float
+  unit           String?    // tons, animals, USD, ha
+  progressPercent Float     @default(0) // e.g. 72, 58, 65, 40
+  category       String?    // PRODUCTION, LIVESTOCK, PROFITABILITY, INFRASTRUCTURE
+  status         GoalStatus @default(IN_PROGRESS)
+  deadline       DateTime?
+
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+}
+
+model FarmActivityLog {
+  id        Int      @id @default(autoincrement())
+  title     String   // e.g. "New crop yield record updated (Maize)"
+  type      String   @default("CROP") // CROP, LIVESTOCK, PROJECT, FINANCE, HR
+  timestamp DateTime @default(now())
+  details   String?
+  farmId    Int?
+  farm      Farm?    @relation(fields: [farmId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+}
+
+model ExecutiveReport {
+  id        Int      @id @default(autoincrement())
+  title     String   // e.g. "Financial Report (Q2 2025)"
+  date      DateTime @default(now())
+  format    String   @default("PDF") // PDF, Excel, CSV
+  fileUrl   String?
+  category  String?  // FINANCIAL, CROPS, LIVESTOCK, INVENTORY, PROJECTS
+
+  createdAt DateTime @default(now())
+}
+
+enum ApprovalStatus {
+  PENDING
+  FOR_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum GoalStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+  BEHIND
 }

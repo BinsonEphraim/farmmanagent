@@ -12,6 +12,7 @@ const authUserSelect = {
   firstName: true,
   lastName: true,
   roleId: true,
+  farmId: true,
   isVerified: true,
   verificationToken: true,
   verificationTokenExpires: true,
@@ -27,6 +28,13 @@ const authUserSelect = {
       createdAt: true,
       updatedAt: true
     }
+  },
+  farm: {
+    select: {
+      id: true,
+      name: true,
+      location: true
+    }
   }
 } as const;
 
@@ -35,12 +43,20 @@ const profileUserSelect = {
   email: true,
   firstName: true,
   lastName: true,
+  farmId: true,
   isVerified: true,
   role: {
     select: {
       id: true,
       name: true,
       description: true
+    }
+  },
+  farm: {
+    select: {
+      id: true,
+      name: true,
+      location: true
     }
   },
   createdAt: true,
@@ -109,6 +125,8 @@ export const register = async (req: Request, res: Response) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role.name,
+        farmId: user.farmId,
+        farm: user.farm,
         isVerified: user.isVerified
       }
     });
@@ -168,6 +186,8 @@ export const login = async (req: Request, res: Response) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role.name,
+        farmId: user.farmId,
+        farm: user.farm,
         isVerified: user.isVerified
       }
     });
@@ -378,6 +398,8 @@ export const updateProfile = async (req: Request, res: Response) => {
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
         role: updatedUser.role.name,
+        farmId: updatedUser.farmId,
+        farm: updatedUser.farm,
         isVerified: updatedUser.isVerified
       }
     });

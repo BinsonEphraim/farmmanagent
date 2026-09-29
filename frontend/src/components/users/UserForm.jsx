@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { userService } from '../../services/userService';
 
-const UserForm = ({ user, roles, onSuccess, onCancel }) => {
+const UserForm = ({ user, roles, farms = [], onSuccess, onCancel }) => {
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     firstName: '',
     lastName: '',
     roleName: 'Employee',
+    farmId: '',
     sendVerification: true,
   });
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,7 @@ const UserForm = ({ user, roles, onSuccess, onCancel }) => {
         firstName: user.firstName || '',
         lastName: user.lastName || '',
         roleName: user.role?.name || 'Employee',
+        farmId: user.farmId || user.farm?.id || '',
         password: '',
         sendVerification: false,
       });
@@ -41,14 +43,20 @@ const UserForm = ({ user, roles, onSuccess, onCancel }) => {
     setError(null);
 
     try {
+      const payload = {
+        ...formData,
+        farmId: formData.farmId ? Number(formData.farmId) : null,
+      };
+
       if (isEditing) {
         await userService.updateUser(user.id, {
-          firstName: formData.firstName,
-          lastName: formData.lastName,
-          roleName: formData.roleName,
+          firstName: payload.firstName,
+          lastName: payload.lastName,
+          roleName: payload.roleName,
+          farmId: payload.farmId,
         });
       } else {
-        await userService.createUser(formData);
+        await userService.createUser(payload);
       }
       onSuccess();
     } catch (err) {
@@ -64,7 +72,7 @@ const UserForm = ({ user, roles, onSuccess, onCancel }) => {
         {isEditing ? '✏️ Edit System User' : '➕ Add New System User'}
       </h2>
       <p style={formStyles.subheading}>
-        {isEditing ? 'Update user roles and personal information.' : 'Enter details to register a new user to the platform.'}
+        {isEditing ? 'Update user role, farm assignment and personal details.' : 'Enter details to register a new user and assign them to a farm.'}
       </p>
 
       {error && <div style={formStyles.error}>{error}</div>}
@@ -143,21 +151,44 @@ const UserForm = ({ user, roles, onSuccess, onCancel }) => {
           </>
         )}
 
-        <div style={formStyles.inputGroup}>
-          <label style={formStyles.label}>Assigned System Role *</label>
-          <select
-            name="roleName"
-            value={formData.roleName}
-            onChange={handleChange}
-            style={formStyles.input}
-          >
-            {roles.map((role) => (
-              <option key={role.id || role.name} value={role.name}>
-                {role.name}
-              </option>
-            ))}
-          </select>
+        <div style={formStyles.row}>
+          <div style={formStyles.halfInput}>
+            <label style={formStyles.label}>Assigned System Role *</label>
+            <select
+              name="roleName"
+              value={formData.roleName}
+              onChange={handleChange}
+              style={formStyles.input}
+              required
+            >
+              {(roles || []).map((role) => (
+                <option key={role.id || role.name} value={role.name}>
+                  {role.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div style={formStyles.halfInput}>
+            <label style={formStyles.label}>Assigned Farm / Working Station</label>
+            <select
+              name="farmId"
+              value={formData.farmId}
+              onChange={handleChange}
+              style={formStyles.input}
+            >
+              <option value="">-- No Specific Farm / Headquarters --</option>
+              {(farms || []).map((f) => (
+                <option key={f.id} value={f.id}>
+                  🌾 {f.name} {f.location ? `(${f.location})` : ''}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
+        <span style={{ fontSize: '12px', color: '#64748b', marginTop: '-6px' }}>
+          Assign the primary farm where this user operates and performs duties.
+        </span>
 
         <div style={formStyles.buttonGroup}>
           <button
@@ -172,7 +203,7 @@ const UserForm = ({ user, roles, onSuccess, onCancel }) => {
             style={formStyles.submitButton}
             disabled={loading}
           >
-            {loading ? 'Saving...' : isEditing ? 'Update User' : 'Create User'}
+            {loading ? 'Saving...' : isEditing ? 'Update User' : 'Create & Assign User'}
           </button>
         </div>
       </form>

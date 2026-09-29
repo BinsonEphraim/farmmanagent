@@ -10,6 +10,12 @@ import {
   AssetCondition,
   MaintenanceType,
   MaintenanceStatus,
+  TransactionType,
+  TransactionStatus,
+  InvoiceStatus,
+  InvoiceType,
+  ApprovalStatus,
+  GoalStatus,
 } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 
@@ -26,42 +32,101 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('🌱 Starting comprehensive database seed...');
 
-  // 1. Seed Roles
+  // 1. Seed 7 Official Roles
   const rolesData = [
-    { name: 'Administrator', description: 'Full system access' },
-    { name: 'Managing Director', description: 'Overall management' },
-    { name: 'Finance Manager', description: 'Financial operations' },
-    { name: 'Farm Manager', description: 'Farm operations' },
-    { name: 'HR Manager', description: 'Human resources' },
-    { name: 'Employee', description: 'Basic user access' },
+    { name: 'System Administrator', description: 'Manages users, roles, permissions, system settings, and overall system administration' },
+    { name: 'Managing Director', description: 'Company-wide monitoring, approvals, oversight, and decision-making' },
+    { name: 'Finance Manager', description: 'Income, expenses, budgets, payroll, cash flow, and financial reports' },
+    { name: 'Human Resources Manager', description: 'Employees, attendance, leave, payroll, performance, training, and staff records' },
+    { name: 'Farm Manager', description: 'Crops, planting, farm activities, livestock, harvesting, and production' },
+    { name: 'Storekeeper', description: 'Inventory, stock levels, fertilizer, seeds, chemicals, and stock movements' },
+    { name: 'Employee/Staff', description: 'Assigned work, farm/operational activities, and information permitted by their role' },
+    // Aliases for compatibility
+    { name: 'Administrator', description: 'Alias for System Administrator' },
+    { name: 'HR Manager', description: 'Alias for Human Resources Manager' },
+    { name: 'Employee', description: 'Alias for Employee/Staff' },
   ];
 
   const roles: Record<string, any> = {};
   for (const r of rolesData) {
     roles[r.name] = await prisma.role.upsert({
       where: { name: r.name },
-      update: {},
+      update: { description: r.description },
       create: r,
     });
   }
-  console.log('✅ Roles created');
+  console.log('✅ 7 Official Roles created');
 
   const hashedPassword = await bcrypt.hash('password123', 10);
 
-  // 2. Seed Admin & Managers
-  await prisma.user.upsert({
-    where: { email: 'admin@ufms.com' },
-    update: {},
-    create: {
+  // 2. Seed 7 Official Role Accounts for Instant Testing & Real Usage
+  const coreUsers = [
+    {
       email: 'admin@ufms.com',
-      password: hashedPassword,
-      firstName: 'Admin',
-      lastName: 'User',
-      roleId: roles['Administrator'].id,
-      isVerified: true,
-      isActive: true,
+      firstName: 'System',
+      lastName: 'Administrator',
+      roleName: 'System Administrator',
     },
-  });
+    {
+      email: 'md@ufms.com',
+      firstName: 'Managing',
+      lastName: 'Director',
+      roleName: 'Managing Director',
+    },
+    {
+      email: 'finance@ufms.com',
+      firstName: 'Finance',
+      lastName: 'Manager',
+      roleName: 'Finance Manager',
+    },
+    {
+      email: 'hr@ufms.com',
+      firstName: 'HR',
+      lastName: 'Manager',
+      roleName: 'Human Resources Manager',
+    },
+    {
+      email: 'manager@ufms.com',
+      firstName: 'Farm',
+      lastName: 'Manager',
+      roleName: 'Farm Manager',
+    },
+    {
+      email: 'store@ufms.com',
+      firstName: 'Central',
+      lastName: 'Storekeeper',
+      roleName: 'Storekeeper',
+    },
+    {
+      email: 'employee@ufms.com',
+      firstName: 'Field',
+      lastName: 'Staff',
+      roleName: 'Employee/Staff',
+    },
+  ];
+
+  for (const u of coreUsers) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {
+        password: hashedPassword,
+        roleId: roles[u.roleName].id,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        isVerified: true,
+        isActive: true,
+      },
+      create: {
+        email: u.email,
+        password: hashedPassword,
+        firstName: u.firstName,
+        lastName: u.lastName,
+        roleId: roles[u.roleName].id,
+        isVerified: true,
+        isActive: true,
+      },
+    });
+  }
 
   const managersData = [
     { email: 'jane.smith@ufms.com', firstName: 'Jane', lastName: 'Smith' },
@@ -69,9 +134,6 @@ async function main() {
     { email: 'sarah.wilson@ufms.com', firstName: 'Sarah', lastName: 'Wilson' },
     { email: 'michael.brown@ufms.com', firstName: 'Michael', lastName: 'Brown' },
     { email: 'emily.davis@ufms.com', firstName: 'Emily', lastName: 'Davis' },
-    { email: 'david.thompson@ufms.com', firstName: 'David', lastName: 'Thompson' },
-    { email: 'lisa.anderson@ufms.com', firstName: 'Lisa', lastName: 'Anderson' },
-    { email: 'james.martin@ufms.com', firstName: 'James', lastName: 'Martin' },
   ];
 
   const managers: any[] = [];
@@ -91,107 +153,142 @@ async function main() {
     });
     managers.push(user);
   }
-  console.log('✅ Users & Managers created');
+  console.log('✅ Core Role Users (MD, Admin, Manager, Finance, Employee) & Farm Managers created');
 
-  // 3. Seed Farms & Real Crops Dataset
+  // 3. Seed persisted HR records used by the HR portal
+  const hrUsers = await prisma.user.findMany({ orderBy: { id: 'asc' } });
+  const attendanceDate = new Date('2026-09-07T00:00:00.000Z');
+  for (const user of hrUsers) {
+    const status = user.email === 'employee@ufms.com' ? 'ON_LEAVE' : user.email === 'hr@ufms.com' ? 'LATE' : 'PRESENT';
+    await prisma.attendanceLog.upsert({
+      where: { userId_date: { userId: user.id, date: attendanceDate } },
+      update: { status, checkIn: status === 'ON_LEAVE' ? null : new Date('2026-09-07T07:45:00.000Z') },
+      create: {
+        userId: user.id,
+        date: attendanceDate,
+        status,
+        checkIn: status === 'ON_LEAVE' ? undefined : new Date('2026-09-07T07:45:00.000Z'),
+        notes: status === 'ON_LEAVE' ? 'Approved annual leave' : undefined,
+      },
+    });
+  }
+
+  const trainingSeed = [
+    { title: 'Commercial Combine Harvester Safety', instructor: 'Farm Operations', scheduledDate: new Date('2026-09-10'), status: 'IN_PROGRESS' },
+    { title: 'Pivot Irrigation Calibration & Telemetry', instructor: 'Engineering Team', scheduledDate: new Date('2026-09-18'), status: 'UPCOMING' },
+    { title: 'Safe Agrochemical Handling & PPE Protocol', instructor: 'Ministry of Agriculture', scheduledDate: new Date('2026-08-28'), status: 'COMPLETED' },
+  ];
+  for (const training of trainingSeed) {
+    const program = await prisma.trainingProgram.upsert({
+      where: { id: trainingSeed.indexOf(training) + 1 },
+      update: training,
+      create: training,
+    });
+    for (const user of hrUsers.slice(0, training.status === 'COMPLETED' ? 4 : 3)) {
+      await prisma.trainingEnrollment.upsert({
+        where: { programId_userId: { programId: program.id, userId: user.id } },
+        update: { status: training.status === 'COMPLETED' ? 'COMPLETED' : 'ENROLLED' },
+        create: { programId: program.id, userId: user.id, status: training.status === 'COMPLETED' ? 'COMPLETED' : 'ENROLLED' },
+      });
+    }
+  }
+
+  for (const user of hrUsers) {
+    await prisma.payrollRecord.upsert({
+      where: { userId_period: { userId: user.id, period: '2026-09' } },
+      update: {},
+      create: { userId: user.id, period: '2026-09', grossAmount: 1800, deductions: 180, netAmount: 1620, status: 'PENDING' },
+    });
+  }
+  console.log('✅ Attendance, training, and payroll records created');
+
+  // 4. Seed Farms & Real Crops Dataset
   const farmsData = [
     {
       name: 'Green Valley Farm',
       location: 'Lilongwe, Malawi',
-      size: 1570,
-      description: 'A large scale commercial crop farm focused on high yield grains, oilseeds and sustainable irrigation.',
+      size: 400,
+      description: 'A large scale commercial crop farm focused on high yield grains, maize and sustainable pivot irrigation.',
       ownerId: managers[0].id,
       crops: [
-        { name: 'Maize', variety: 'Hybrid SC 513', plantingDate: new Date('2025-01-15'), harvestDate: new Date('2026-04-15'), yield: 8500, area: 1250, status: CropStatus.GROWING },
-        { name: 'Sunflower', variety: 'Kilimo', plantingDate: new Date('2025-01-25'), harvestDate: new Date('2026-03-15'), yield: 2100, area: 320, status: CropStatus.GROWING },
+        { name: 'Maize', variety: 'Hybrid SC 513', plantingDate: new Date('2025-01-15'), harvestDate: new Date('2026-04-15'), yield: 176, area: 400, status: CropStatus.GROWING },
       ],
-      animals: [],
+      animals: [
+        { name: 'Boran Cattle Herd', type: AnimalType.CATTLE, breed: 'Boran', age: 3, healthStatus: HealthStatus.HEALTHY },
+        { name: 'Boer Goats Unit', type: AnimalType.GOAT, breed: 'Boer', age: 2, healthStatus: HealthStatus.HEALTHY },
+      ],
       revenues: [
-        { source: 'Maize Grain Supply', amount: 35600, date: new Date('2025-05-10') },
-        { source: 'Sunflower Oil Seed Pre-sale', amount: 18000, date: new Date('2025-04-12') },
+        { source: 'Maize Grain Supply', amount: 53650, date: new Date('2025-05-10') },
         { source: 'Commercial Grain Supply', amount: 38850, date: new Date('2025-03-05') },
       ],
     },
     {
       name: 'Sunrise Farm',
       location: 'Blantyre, Malawi',
-      size: 1250,
-      description: 'Integrated agricultural enterprise combining lowland commercial rice fields with high-altitude tea plantations.',
+      size: 350,
+      description: 'Integrated agricultural enterprise combining tuber root crops with tea and livestock pastures.',
       ownerId: managers[1].id,
       crops: [
-        { name: 'Rice', variety: 'NERICA 4', plantingDate: new Date('2025-01-20'), harvestDate: new Date('2026-03-20'), yield: 4800, area: 850, status: CropStatus.GROWING },
-        { name: 'Tea', variety: 'PC 108', plantingDate: new Date('2024-11-20'), harvestDate: new Date('2025-11-20'), yield: 6100, area: 400, status: CropStatus.HARVESTED },
+        { name: 'Cassava', variety: 'Kemboma', plantingDate: new Date('2025-01-20'), harvestDate: new Date('2026-03-20'), yield: 108, area: 250, status: CropStatus.GROWING },
+        { name: 'Vegetables', variety: 'Horticulture Mix', plantingDate: new Date('2025-02-15'), harvestDate: new Date('2025-11-20'), yield: 30, area: 100, status: CropStatus.HARVESTED },
       ],
       animals: [
-        { name: 'Boran Cattle', type: AnimalType.CATTLE, breed: 'Boran', age: 3, healthStatus: HealthStatus.HEALTHY },
+        { name: 'Dairy Herd A', type: AnimalType.CATTLE, breed: 'Friesian', age: 4, healthStatus: HealthStatus.HEALTHY },
+        { name: 'Broiler Flock', type: AnimalType.POULTRY, breed: 'Cobb 500', age: 1, healthStatus: HealthStatus.HEALTHY },
       ],
       revenues: [
-        { source: 'Tea Auction', amount: 18750, date: new Date('2025-05-15') },
-        { source: 'Rice Wholesale', amount: 24500, date: new Date('2025-04-20') },
+        { source: 'Cassava Wholesale', amount: 38700, date: new Date('2025-05-15') },
+        { source: 'Horticulture Auction', amount: 29500, date: new Date('2025-04-20') },
       ],
     },
     {
       name: 'Happy Land Farm',
       location: 'Mzuzu, Malawi',
-      size: 830,
-      description: 'Fertile northern plateau farm specializing in certified legume propagation and winter wheat.',
+      size: 250,
+      description: 'Fertile northern plateau farm specializing in certified legumes, soybeans and organic vegetables.',
       ownerId: managers[2].id,
       crops: [
-        { name: 'Soybeans', variety: 'SB 19', plantingDate: new Date('2025-02-01'), harvestDate: new Date('2026-04-10'), yield: 3200, area: 620, status: CropStatus.GROWING },
-        { name: 'Wheat', variety: 'Gamtoos', plantingDate: new Date('2025-04-01'), harvestDate: new Date('2026-05-10'), yield: 3900, area: 210, status: CropStatus.GROWING },
+        { name: 'Soybeans', variety: 'SB 19', plantingDate: new Date('2025-02-01'), harvestDate: new Date('2026-04-10'), yield: 76, area: 200, status: CropStatus.GROWING },
+        { name: 'Vegetables', variety: 'Cabbage & Onion', plantingDate: new Date('2025-03-01'), harvestDate: new Date('2026-05-10'), yield: 11, area: 50, status: CropStatus.GROWING },
       ],
       animals: [
-        { name: 'Dairy Herd A', type: AnimalType.CATTLE, breed: 'Friesian', age: 4, healthStatus: HealthStatus.HEALTHY },
+        { name: 'Dorper Sheep Flock', type: AnimalType.SHEEP, breed: 'Dorper', age: 2, healthStatus: HealthStatus.HEALTHY },
       ],
       revenues: [
-        { source: 'Soybean Processing', amount: 15300, date: new Date('2025-05-02') },
-        { source: 'Wheat Flour Contract', amount: 18200, date: new Date('2025-02-18') },
-      ],
-    },
-    {
-      name: 'Brown Fields',
-      location: 'Salima, Malawi',
-      size: 650,
-      description: 'Lakeside fertile agricultural fields dedicated to high-demand industrial commodities.',
-      ownerId: managers[3].id,
-      crops: [
-        { name: 'Groundnuts', variety: 'JL 24', plantingDate: new Date('2025-02-10'), harvestDate: new Date('2026-02-18'), yield: 1800, area: 300, status: CropStatus.GROWING },
-        { name: 'Sugarcane', variety: 'NCo 376', plantingDate: new Date('2024-09-15'), harvestDate: new Date('2026-06-30'), yield: 9500, area: 350, status: CropStatus.GROWING },
-      ],
-      animals: [],
-      revenues: [
-        { source: 'Groundnut Export', amount: 12900, date: new Date('2025-05-08') },
-        { source: 'Sugarcane Delivery', amount: 61300, date: new Date('2025-03-25') },
-      ],
-    },
-    {
-      name: 'Dairy Farm',
-      location: 'Ntchisi, Malawi',
-      size: 450,
-      description: 'High-altitude multi-enterprise farm with burley tobacco and automated livestock production.',
-      ownerId: managers[4].id,
-      crops: [
-        { name: 'Tobacco', variety: 'Burley', plantingDate: new Date('2024-10-15'), harvestDate: new Date('2026-01-05'), yield: 4200, area: 450, status: CropStatus.HARVESTED },
-      ],
-      animals: [
-        { name: 'Holstein Herd', type: AnimalType.CATTLE, breed: 'Holstein-Friesian', age: 3, healthStatus: HealthStatus.HEALTHY },
-      ],
-      revenues: [
-        { source: 'Tobacco Auction Floor', amount: 28600, date: new Date('2025-05-18') },
+        { source: 'Soybean Processing', amount: 32300, date: new Date('2025-05-02') },
+        { source: 'Vegetable Supply Contract', amount: 20000, date: new Date('2025-02-18') },
       ],
     },
     {
       name: 'River View Farm',
       location: 'Karonga, Malawi',
-      size: 220,
-      description: 'River-basin farm dedicated to high-yield tuber crops and orange-fleshed sweet potatoes.',
-      ownerId: managers[5].id,
+      size: 150,
+      description: 'River-basin farm dedicated to high-yield groundnut export seed and organic tubers.',
+      ownerId: managers[3].id,
       crops: [
-        { name: 'Sweet Potatoes', variety: 'SP Local', plantingDate: new Date('2025-03-01'), harvestDate: new Date('2026-01-25'), yield: 6500, area: 220, status: CropStatus.GROWING },
+        { name: 'Groundnuts', variety: 'JL 24', plantingDate: new Date('2025-02-10'), harvestDate: new Date('2026-02-18'), yield: 61, area: 150, status: CropStatus.GROWING },
       ],
-      animals: [],
+      animals: [
+        { name: 'Large White Swine', type: AnimalType.PIG, breed: 'Large White', age: 2, healthStatus: HealthStatus.HEALTHY },
+      ],
       revenues: [
-        { source: 'Tuber Distribution', amount: 9800, date: new Date('2025-04-10') },
+        { source: 'Groundnut Export', amount: 32400, date: new Date('2025-05-08') },
+      ],
+    },
+    {
+      name: 'Kawale Farm',
+      location: 'Kasungu, Malawi',
+      size: 100,
+      description: 'Central agricultural station focused on sunflower oil seed, sorghum and poultry breeding.',
+      ownerId: managers[4].id,
+      crops: [
+        { name: 'Others', variety: 'Sunflower & Sorghum', plantingDate: new Date('2025-01-20'), harvestDate: new Date('2026-01-05'), yield: 20, area: 100, status: CropStatus.HARVESTED },
+      ],
+      animals: [
+        { name: 'Layer Hens Unit', type: AnimalType.POULTRY, breed: 'Hy-Line Brown', age: 1, healthStatus: HealthStatus.HEALTHY },
+      ],
+      revenues: [
+        { source: 'Sunflower & Poultry Sales', amount: 22100, date: new Date('2025-05-18') },
       ],
     },
     {
@@ -199,7 +296,7 @@ async function main() {
       location: 'Kasungu, Malawi',
       size: 180,
       description: 'Certified organic farming operations focused on export-quality dry beans and pulses.',
-      ownerId: managers[6].id,
+      ownerId: managers[0].id,
       crops: [
         { name: 'Beans', variety: 'Rosecoco', plantingDate: new Date('2025-02-15'), harvestDate: new Date('2025-12-12'), yield: 1400, area: 180, status: CropStatus.GROWING },
       ],
@@ -209,11 +306,11 @@ async function main() {
       ],
     },
     {
-      name: 'Kawale Farm',
+      name: 'Dedza Farm Station',
       location: 'Dedza, Malawi',
       size: 140,
       description: 'Highland industrial cotton propagation farm with strict biosecurity protocols.',
-      ownerId: managers[7].id,
+      ownerId: managers[1].id,
       crops: [
         { name: 'Cotton', variety: 'CICAM B72', plantingDate: new Date('2025-01-28'), harvestDate: new Date('2026-02-28'), yield: 2800, area: 140, status: CropStatus.GROWING },
       ],
@@ -227,7 +324,7 @@ async function main() {
       location: 'Lilongwe Central Depot, Malawi',
       size: 50,
       description: 'Central agricultural machinery maintenance depot, parts store and equipment fleet base.',
-      ownerId: managers[0].id,
+      ownerId: managers[2].id,
       crops: [],
       animals: [],
       revenues: [],
@@ -293,6 +390,46 @@ async function main() {
       }
     }
   }
+
+  // Assign Core Users & Managers to Farms
+  if (farmMap['Green Valley Farm']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['manager@ufms.com', 'employee@ufms.com', 'jane.smith@ufms.com'] } },
+      data: { farmId: farmMap['Green Valley Farm'] },
+    });
+  }
+  if (farmMap['Sunrise Farm']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['robert.johnson@ufms.com'] } },
+      data: { farmId: farmMap['Sunrise Farm'] },
+    });
+  }
+  if (farmMap['Happy Land Farm']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['sarah.wilson@ufms.com'] } },
+      data: { farmId: farmMap['Happy Land Farm'] },
+    });
+  }
+  if (farmMap['River View Farm']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['michael.brown@ufms.com'] } },
+      data: { farmId: farmMap['River View Farm'] },
+    });
+  }
+  if (farmMap['Kawale Farm']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['emily.davis@ufms.com'] } },
+      data: { farmId: farmMap['Kawale Farm'] },
+    });
+  }
+  if (farmMap['Main Store']) {
+    await prisma.user.updateMany({
+      where: { email: { in: ['store@ufms.com'] } },
+      data: { farmId: farmMap['Main Store'] },
+    });
+  }
+
+  console.log('✅ Users successfully assigned to their respective farms');
 
   // 4. Seed Assets & Equipment Dataset
   const assetsData = [
@@ -814,7 +951,797 @@ async function main() {
     }
   }
 
-  console.log('✅ Real Farms, Crops, Animals, Revenues & Assets successfully seeded!');
+  // 5. Seed Financial Accounts
+  const accountsData = [
+    { name: 'Operating Account', accountNumber: 'ACC-OP-0012984', bankName: 'National Bank of Malawi', balance: 86520, type: 'Checking' },
+    { name: 'Sales Account', accountNumber: 'ACC-SL-9923841', bankName: 'Standard Bank', balance: 142500, type: 'Checking' },
+    { name: 'Payroll Account', accountNumber: 'ACC-PR-4412093', bankName: 'First Capital Bank', balance: 34800, type: 'Checking' },
+    { name: 'Receivable Account', accountNumber: 'ACC-RC-1109482', bankName: 'Ecobank', balance: 34250, type: 'Savings' },
+    { name: 'Petty Cash', accountNumber: 'CASH-VAULT-01', bankName: 'Main Office Vault', balance: 4500, type: 'Cash' },
+  ];
+
+  for (const acc of accountsData) {
+    await prisma.financialAccount.upsert({
+      where: { name: acc.name },
+      update: acc,
+      create: acc,
+    });
+  }
+
+  // 6. Seed Invoices
+  const invoicesData = [
+    {
+      invoiceNumber: 'INV-2025-0052',
+      title: 'Maize Sales - Green Valley Farm',
+      customer: 'National Food Reserve Agency',
+      customerEmail: 'procurement@nfra.mw',
+      issueDate: new Date('2025-05-31'),
+      dueDate: new Date('2025-06-30'),
+      amount: 12500,
+      paidAmount: 12500,
+      status: InvoiceStatus.PAID,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      invoiceNumber: 'INV-2025-0051',
+      title: 'Milk Sales - Sunrise Farm',
+      customer: 'Suncrest Creameries Ltd',
+      customerEmail: 'orders@suncrest.com',
+      issueDate: new Date('2025-05-28'),
+      dueDate: new Date('2025-06-28'),
+      amount: 3750,
+      paidAmount: 3750,
+      status: InvoiceStatus.PAID,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      invoiceNumber: 'INV-2025-0050',
+      title: 'Beans Sales - Happy Land Farm',
+      customer: 'Rab Processors Ltd',
+      customerEmail: 'finance@rabmw.com',
+      issueDate: new Date('2025-05-25'),
+      dueDate: new Date('2025-06-25'),
+      amount: 5600,
+      paidAmount: 0,
+      status: InvoiceStatus.SENT,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'Happy Land Farm',
+    },
+    {
+      invoiceNumber: 'INV-2025-0049',
+      title: 'Groundnuts Sales - Brown Fields',
+      customer: 'Mulling Group Ltd',
+      customerEmail: 'accounts@mulling.mw',
+      issueDate: new Date('2025-05-20'),
+      dueDate: new Date('2025-06-20'),
+      amount: 4250,
+      paidAmount: 0,
+      status: InvoiceStatus.PENDING,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'Brown Fields',
+    },
+    {
+      invoiceNumber: 'INV-2025-0048',
+      title: 'Sunflower Sales - River View Farm',
+      customer: 'Capital Oil Refining',
+      customerEmail: 'supply@capitaloil.com',
+      issueDate: new Date('2025-05-18'),
+      dueDate: new Date('2025-05-30'),
+      amount: 6300,
+      paidAmount: 0,
+      status: InvoiceStatus.OVERDUE,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'River View Farm',
+    },
+    {
+      invoiceNumber: 'INV-2025-0047',
+      title: 'Tea Export Consignment - Sunrise Farm',
+      customer: 'Limbe Leaf Tobacco & Tea',
+      customerEmail: 'trade@limbeleaf.mw',
+      issueDate: new Date('2025-05-12'),
+      dueDate: new Date('2025-06-12'),
+      amount: 14800,
+      paidAmount: 14800,
+      status: InvoiceStatus.PAID,
+      type: InvoiceType.RECEIVABLE,
+      farmName: 'Sunrise Farm',
+    },
+  ];
+
+  const invoiceMap: Record<string, number> = {};
+  for (const inv of invoicesData) {
+    const { farmName, ...invData } = inv;
+    const farmId = farmMap[farmName] || farmMap['Green Valley Farm'];
+
+    const existingInv = await prisma.invoice.findUnique({
+      where: { invoiceNumber: invData.invoiceNumber },
+    });
+
+    if (existingInv) {
+      invoiceMap[invData.invoiceNumber] = existingInv.id;
+      await prisma.invoice.update({
+        where: { id: existingInv.id },
+        data: { ...invData, farmId },
+      });
+    } else {
+      const created = await prisma.invoice.create({
+        data: { ...invData, farmId },
+      });
+      invoiceMap[invData.invoiceNumber] = created.id;
+    }
+  }
+
+  // 7. Seed Transactions
+  const transactionsData = [
+    // May Recent Transactions (matching UI table)
+    {
+      reference: 'INV-2025-0052',
+      date: new Date('2025-05-31'),
+      description: 'Maize Sales - Green Valley Farm',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 12500,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0087',
+      date: new Date('2025-05-30'),
+      description: 'Fertilizer Purchase - DAP',
+      category: 'Farm Inputs',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 4850,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'PAY-2025-0041',
+      date: new Date('2025-05-29'),
+      description: 'Employee Salaries - May 2025',
+      category: 'Payroll',
+      account: 'Payroll Account',
+      type: TransactionType.EXPENSE,
+      amount: 18750,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'INV-2025-0051',
+      date: new Date('2025-05-28'),
+      description: 'Milk Sales - Sunrise Farm',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 3750,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      reference: 'EXP-2025-0086',
+      date: new Date('2025-05-27'),
+      description: 'Fuel Purchase',
+      category: 'Fuel & Transport',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 2320,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      reference: 'RCV-2025-0033',
+      date: new Date('2025-05-26'),
+      description: 'Payment from ABC Traders',
+      category: 'Accounts Receivable',
+      account: 'Receivable Account',
+      type: TransactionType.INCOME,
+      amount: 8200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Happy Land Farm',
+    },
+    {
+      reference: 'EXP-2025-0085',
+      date: new Date('2025-05-25'),
+      description: 'Veterinary Supplies',
+      category: 'Animal Health',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 1450,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      reference: 'BIL-2025-0021',
+      date: new Date('2025-05-24'),
+      description: 'Electricity Bill - Farm Office',
+      category: 'Utilities',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 580,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+
+    // Additional May Transactions
+    {
+      reference: 'EXP-2025-0084',
+      date: new Date('2025-05-22'),
+      description: 'Certified Seed Corn Hybrid Bags',
+      category: 'Farm Inputs',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 6200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'INV-2025-0047',
+      date: new Date('2025-05-18'),
+      description: 'Tea Auction Batch 4 Export',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 18750,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      reference: 'EXP-2025-0083',
+      date: new Date('2025-05-15'),
+      description: 'Machinery Spare Parts & Hydraulic Hoses',
+      category: 'Other Expenses',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 3200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Main Store',
+    },
+    {
+      reference: 'EXP-2025-0082',
+      date: new Date('2025-05-10'),
+      description: 'Diesel Fuel for Center Pivot Generators',
+      category: 'Fuel & Transport',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 4100,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0081',
+      date: new Date('2025-05-08'),
+      description: 'Livestock Vaccines & Antibiotic Dosing',
+      category: 'Animal Health',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 2800,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+    {
+      reference: 'BIL-2025-0020',
+      date: new Date('2025-05-04'),
+      description: 'Water Pumping Grid Surcharge',
+      category: 'Utilities',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 1450,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Happy Land Farm',
+    },
+    {
+      reference: 'INV-2025-0046',
+      date: new Date('2025-05-02'),
+      description: 'Commercial Grain Supply Consignment',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 38850,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+
+    // April Transactions
+    {
+      reference: 'INV-2025-0040',
+      date: new Date('2025-04-28'),
+      description: 'Soybean Meal Processing Pre-sale',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 24500,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Happy Land Farm',
+    },
+    {
+      reference: 'EXP-2025-0070',
+      date: new Date('2025-04-26'),
+      description: 'Monthly Staff Payroll - April',
+      category: 'Payroll',
+      account: 'Payroll Account',
+      type: TransactionType.EXPENSE,
+      amount: 10000,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0069',
+      date: new Date('2025-04-20'),
+      description: 'Pesticide & Fungicide Application Spray',
+      category: 'Farm Inputs',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 8200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Brown Fields',
+    },
+    {
+      reference: 'INV-2025-0039',
+      date: new Date('2025-04-12'),
+      description: 'Sunflower Pre-sale Deposit',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 18000,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0068',
+      date: new Date('2025-04-08'),
+      description: 'Tractor Haulage & Fleet Fuel',
+      category: 'Fuel & Transport',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 3100,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+
+    // March Transactions
+    {
+      reference: 'INV-2025-0030',
+      date: new Date('2025-03-25'),
+      description: 'Sugarcane Bulk Delivery',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 61300,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Brown Fields',
+    },
+    {
+      reference: 'EXP-2025-0050',
+      date: new Date('2025-03-20'),
+      description: 'Urea & NPK Compound Fertilizer',
+      category: 'Farm Inputs',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 13200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0049',
+      date: new Date('2025-03-15'),
+      description: 'Cattle Feed & Mineral Supplements',
+      category: 'Animal Health',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 4200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Sunrise Farm',
+    },
+
+    // February Transactions
+    {
+      reference: 'INV-2025-0020',
+      date: new Date('2025-02-20'),
+      description: 'Wheat Flour Forward Contract Deposit',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 18200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Happy Land Farm',
+    },
+    {
+      reference: 'EXP-2025-0030',
+      date: new Date('2025-02-14'),
+      description: 'Farm Infrastructure & Canal Maintenance',
+      category: 'Other Expenses',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 7050,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'BIL-2025-0010',
+      date: new Date('2025-02-05'),
+      description: 'HQ Internet, Cloud & Telemetry Utility',
+      category: 'Utilities',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 4200,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+
+    // January Transactions
+    {
+      reference: 'INV-2025-0010',
+      date: new Date('2025-01-20'),
+      description: 'Burley Tobacco Floor Auction Balance',
+      category: 'Sales Revenue',
+      account: 'Sales Account',
+      type: TransactionType.INCOME,
+      amount: 28600,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Dairy Farm',
+    },
+    {
+      reference: 'EXP-2025-0015',
+      date: new Date('2025-01-10'),
+      description: 'Irrigation Drip Lines & Spares',
+      category: 'Other Expenses',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 2800,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+    {
+      reference: 'EXP-2025-0014',
+      date: new Date('2025-01-05'),
+      description: 'Planting Season Logistics Fuel',
+      category: 'Fuel & Transport',
+      account: 'Operating Account',
+      type: TransactionType.EXPENSE,
+      amount: 2800,
+      status: TransactionStatus.COMPLETED,
+      farmName: 'Green Valley Farm',
+    },
+  ];
+
+  for (const t of transactionsData) {
+    const { farmName, ...txData } = t;
+    const farmId = farmMap[farmName] || farmMap['Green Valley Farm'];
+    const invoiceId = invoiceMap[txData.reference] || null;
+
+    const existingTx = await prisma.transaction.findUnique({
+      where: { reference: txData.reference },
+    });
+
+    if (existingTx) {
+      await prisma.transaction.update({
+        where: { id: existingTx.id },
+        data: { ...txData, farmId, invoiceId },
+      });
+    } else {
+      await prisma.transaction.create({
+        data: { ...txData, farmId, invoiceId },
+      });
+    }
+  }
+
+  // 8. Seed Budgets
+  const budgetsData = [
+    {
+      name: 'Farm Inputs Budget 2025',
+      category: 'Farm Inputs',
+      allocatedAmount: 45000,
+      spentAmount: 32450,
+      period: '2025 Season A',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      farmName: 'Green Valley Farm',
+    },
+    {
+      name: 'Operational Payroll 2025',
+      category: 'Payroll',
+      allocatedAmount: 40000,
+      spentAmount: 28750,
+      period: '2025 Season A',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      farmName: 'Green Valley Farm',
+    },
+    {
+      name: 'Fleet Fuel & Transit Budget',
+      category: 'Fuel & Transport',
+      allocatedAmount: 20000,
+      spentAmount: 12320,
+      period: '2025 Season A',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      farmName: 'Sunrise Farm',
+    },
+    {
+      name: 'Animal Health & Feed Budget',
+      category: 'Animal Health',
+      allocatedAmount: 15000,
+      spentAmount: 8450,
+      period: '2025 Season A',
+      startDate: new Date('2025-01-01'),
+      endDate: new Date('2025-12-31'),
+      farmName: 'Sunrise Farm',
+    },
+  ];
+
+  for (const b of budgetsData) {
+    const { farmName, ...bData } = b;
+    const farmId = farmMap[farmName] || farmMap['Green Valley Farm'];
+
+    const existingBudget = await prisma.budget.findFirst({
+      where: { name: bData.name },
+    });
+
+    if (existingBudget) {
+      await prisma.budget.update({
+        where: { id: existingBudget.id },
+        data: { ...bData, farmId },
+      });
+    } else {
+      await prisma.budget.create({
+        data: { ...bData, farmId },
+      });
+    }
+  }
+
+  // 9. Seed Key Decisions & Approvals
+  const approvalsData = [
+    {
+      title: 'Project Budget Approval – Green Valley Farm',
+      category: 'Budget',
+      requestedBy: 'Agronomy Lead',
+      amount: 25000,
+      meta: '$25,000',
+      status: ApprovalStatus.PENDING,
+      date: new Date('2025-05-28'),
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'Purchase Request – Fertilizer',
+      category: 'Procurement',
+      requestedBy: 'Farm Operations',
+      amount: 12500,
+      meta: '$12,500',
+      status: ApprovalStatus.PENDING,
+      date: new Date('2025-05-27'),
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'Leave Request – HR',
+      category: 'HR',
+      requestedBy: 'Senior Mechanic',
+      amount: null,
+      meta: '3 days',
+      status: ApprovalStatus.PENDING,
+      date: new Date('2025-05-26'),
+      farmName: 'Sunrise Farm',
+    },
+    {
+      title: 'Financial Report – Q2',
+      category: 'Finance',
+      requestedBy: 'Finance Department',
+      amount: null,
+      meta: 'Q2 Statement',
+      status: ApprovalStatus.FOR_REVIEW,
+      date: new Date('2025-05-25'),
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'Asset Purchase – Tractor',
+      category: 'Asset',
+      requestedBy: 'Logistics Supervisor',
+      amount: 45000,
+      meta: '$45,000',
+      status: ApprovalStatus.APPROVED,
+      date: new Date('2025-05-24'),
+      farmName: 'Sunrise Farm',
+    },
+  ];
+
+  for (const app of approvalsData) {
+    const { farmName, ...aData } = app;
+    const farmId = farmMap[farmName] || farmMap['Green Valley Farm'];
+
+    const existingApp = await prisma.approvalRequest.findFirst({
+      where: { title: aData.title },
+    });
+
+    if (existingApp) {
+      await prisma.approvalRequest.update({
+        where: { id: existingApp.id },
+        data: { ...aData, farmId },
+      });
+    } else {
+      await prisma.approvalRequest.create({
+        data: { ...aData, farmId },
+      });
+    }
+  }
+
+  // 10. Seed Strategic Goals
+  const goalsData = [
+    {
+      title: 'Increase crop production',
+      target: 'Target: 600 tons',
+      currentValue: 432,
+      targetValue: 600,
+      unit: 'tons',
+      progressPercent: 72,
+      category: 'PRODUCTION',
+      status: GoalStatus.IN_PROGRESS,
+      deadline: new Date('2025-12-31'),
+    },
+    {
+      title: 'Expand livestock stock',
+      target: 'Target: 1,500 animals',
+      currentValue: 870,
+      targetValue: 1500,
+      unit: 'animals',
+      progressPercent: 58,
+      category: 'LIVESTOCK',
+      status: GoalStatus.IN_PROGRESS,
+      deadline: new Date('2025-12-31'),
+    },
+    {
+      title: 'Improve profitability',
+      target: 'Target: $250,000',
+      currentValue: 162500,
+      targetValue: 250000,
+      unit: 'USD',
+      progressPercent: 65,
+      category: 'PROFITABILITY',
+      status: GoalStatus.IN_PROGRESS,
+      deadline: new Date('2025-12-31'),
+    },
+    {
+      title: 'Complete irrigation project',
+      target: 'Target: 100 ha',
+      currentValue: 40,
+      targetValue: 100,
+      unit: 'ha',
+      progressPercent: 40,
+      category: 'INFRASTRUCTURE',
+      status: GoalStatus.IN_PROGRESS,
+      deadline: new Date('2025-12-31'),
+    },
+  ];
+
+  for (const g of goalsData) {
+    const existingGoal = await prisma.strategicGoal.findFirst({
+      where: { title: g.title },
+    });
+
+    if (existingGoal) {
+      await prisma.strategicGoal.update({
+        where: { id: existingGoal.id },
+        data: g,
+      });
+    } else {
+      await prisma.strategicGoal.create({
+        data: g,
+      });
+    }
+  }
+
+  // 11. Seed Recent Activities
+  const activitiesData = [
+    {
+      title: 'New crop yield record updated (Maize)',
+      type: 'CROP',
+      timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+      details: '176 tons harvested across Field Pivot Alpha',
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'Livestock vaccination completed',
+      type: 'LIVESTOCK',
+      timestamp: new Date(Date.now() - 3 * 60 * 60 * 1000), // 3 hours ago
+      details: 'Quarterly Foot & Mouth vaccination administered',
+      farmName: 'Sunrise Farm',
+    },
+    {
+      title: 'Project milestone reached (Irrigation)',
+      type: 'PROJECT',
+      timestamp: new Date(Date.now() - 5 * 60 * 60 * 1000), // 5 hours ago
+      details: 'Phase 2 pump station telemetry connected',
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'Expense approved (Fertilizer Purchase)',
+      type: 'FINANCE',
+      timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000), // 6 hours ago
+      details: 'DAP compound chemical consignment authorized',
+      farmName: 'Green Valley Farm',
+    },
+    {
+      title: 'New employee added',
+      type: 'HR',
+      timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000), // 8 hours ago
+      details: 'Agronomy specialist onboarded for northern zone',
+      farmName: 'Happy Land Farm',
+    },
+  ];
+
+  for (const act of activitiesData) {
+    const { farmName, ...actData } = act;
+    const farmId = farmMap[farmName] || farmMap['Green Valley Farm'];
+
+    const existingAct = await prisma.farmActivityLog.findFirst({
+      where: { title: actData.title },
+    });
+
+    if (existingAct) {
+      await prisma.farmActivityLog.update({
+        where: { id: existingAct.id },
+        data: { ...actData, farmId },
+      });
+    } else {
+      await prisma.farmActivityLog.create({
+        data: { ...actData, farmId },
+      });
+    }
+  }
+
+  // 12. Seed Executive Reports
+  const reportsData = [
+    {
+      title: 'Financial Report (Q2 2025)',
+      date: new Date('2025-05-25'),
+      format: 'PDF',
+      category: 'FINANCIAL',
+    },
+    {
+      title: 'Crop Production Report',
+      date: new Date('2025-05-20'),
+      format: 'PDF',
+      category: 'CROPS',
+    },
+    {
+      title: 'Livestock Report',
+      date: new Date('2025-05-18'),
+      format: 'PDF',
+      category: 'LIVESTOCK',
+    },
+    {
+      title: 'Inventory Report',
+      date: new Date('2025-05-15'),
+      format: 'Excel',
+      category: 'INVENTORY',
+    },
+    {
+      title: 'Project Progress Report',
+      date: new Date('2025-05-12'),
+      format: 'PDF',
+      category: 'PROJECTS',
+    },
+  ];
+
+  for (const rep of reportsData) {
+    const existingRep = await prisma.executiveReport.findFirst({
+      where: { title: rep.title },
+    });
+
+    if (existingRep) {
+      await prisma.executiveReport.update({
+        where: { id: existingRep.id },
+        data: rep,
+      });
+    } else {
+      await prisma.executiveReport.create({
+        data: rep,
+      });
+    }
+  }
+
+  console.log('✅ Real Farms, Crops, Animals, Assets, Invoices, Accounts, Approvals, Goals & Reports successfully seeded!');
 }
 
 main()

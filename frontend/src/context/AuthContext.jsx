@@ -46,21 +46,6 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
-  // Register with email verification
-  const register = async (userData) => {
-    try {
-      setError(null);
-      const data = await authService.register(userData);
-      
-      // Don't auto-login - user needs to verify email first
-      return { success: true, data };
-    } catch (err) {
-      const errorMsg = err.response?.data?.error || 'Registration failed';
-      setError(errorMsg);
-      return { success: false, error: errorMsg };
-    }
-  };
-
   // Verify email
   const verifyEmail = async (token) => {
     try {
@@ -145,7 +130,6 @@ export const AuthProvider = ({ children }) => {
     loading,
     error,
     login,
-    register,
     verifyEmail,
     forgotPassword,
     resetPassword,

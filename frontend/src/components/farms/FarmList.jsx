@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, Component } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { farmService } from '../../services/farmService';
 import { userService } from '../../services/userService';
 import { useAuth } from '../../context/AuthContext';
 import './FarmList.css';
+import LogoutButton from '../common/LogoutButton';
 
 // High-resolution landscape photos tailored for farm visual identification
 const FARM_HERO_IMAGES = [
@@ -17,7 +18,82 @@ const FARM_HERO_IMAGES = [
   'https://images.unsplash.com/photo-1595974482597-4b8da8879bc5?auto=format&fit=crop&q=80&w=800',
 ];
 
-const FarmList = () => {
+// Helper to get species icon
+const getSpeciesIcon = (type = '') => {
+  const lower = type.toLowerCase();
+  if (lower.includes('cow') || lower.includes('catt')) return '🐄';
+  if (lower.includes('goat')) return '🐐';
+  if (lower.includes('sheep')) return '🐑';
+  if (lower.includes('pig') || lower.includes('swine')) return '🐖';
+  if (lower.includes('poul') || lower.includes('chick') || lower.includes('hen')) return '🐔';
+  if (lower.includes('duck')) return '🦆';
+  if (lower.includes('fish')) return '🐟';
+  if (lower.includes('horse')) return '🐎';
+  if (lower.includes('bee')) return '🐝';
+  return '🐾';
+};
+
+// Species color palette for charts & badges
+const SPECIES_COLORS = ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'];
+
+// ============================================
+// REACT ERROR BOUNDARY COMPONENT
+// ============================================
+class FarmErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('FarmErrorBoundary caught an error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="farms-page-container">
+          <div className="farms-error-fallback">
+            <div className="error-fallback-card">
+              <div className="error-icon-circle">⚠️</div>
+              <h2>Farm Management System Error</h2>
+              <p>We encountered an unexpected issue while rendering the farm management interface.</p>
+              {this.state.error?.message && (
+                <div className="error-message-box">
+                  <code>{this.state.error.message}</code>
+                </div>
+              )}
+              <div className="error-actions-group">
+                <button
+                  onClick={() => window.location.reload()}
+                  className="btn-error-primary"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+                  </svg>
+                  <span>Reload Page</span>
+                </button>
+                <a href="/dashboard" className="btn-error-secondary">
+                  <span>Return to Dashboard</span>
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ============================================
+// MAIN FARMLIST VIEW
+// ============================================
+const FarmListView = () => {
   const { user: authUser } = useAuth();
   const navigate = useNavigate();
 
@@ -28,6 +104,7 @@ const FarmList = () => {
   const [statsLoading, setStatsLoading] = useState(true);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [error, setError] = useState(null);
+  const [notification, setNotification] = useState(null);
 
   // Statistics state
   const [stats, setStats] = useState({
@@ -52,7 +129,7 @@ const FarmList = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(10);
 
-  // Add / Edit Modal state
+  // Add / Edit Farm Modal state
   const [showModal, setShowModal] = useState(false);
   const [editingFarm, setEditingFarm] = useState(null);
   const [formData, setFormData] = useState({
@@ -62,6 +139,25 @@ const FarmList = () => {
     ownerId: '',
     description: '',
   });
+
+  // Add Animal Modal state
+  const [showAnimalModal, setShowAnimalModal] = useState(false);
+  const [animalFormData, setAnimalFormData] = useState({
+    farmId: '',
+    name: '',
+    type: 'Cattle',
+    breed: '',
+    age: '',
+    healthStatus: 'HEALTHY',
+  });
+
+  // Show transient toast notification
+  const showToast = (message, type = 'success') => {
+    setNotification({ message, type });
+    setTimeout(() => {
+      setNotification(null);
+    }, 4000);
+  };
 
   // Determine farm type dynamically based on real crops and animals in DB
   const determineFarmType = (farm) => {
@@ -114,6 +210,8 @@ const FarmList = () => {
             cropsCount: f.crops?.length || f._count?.crops || 0,
             animalsCount: f.animals?.length || f._count?.animals || 0,
             inventoryCount: f.inventory?.length || f._count?.inventory || 0,
+            rawAnimals: f.animals || [],
+            rawCrops: f.crops || [],
             description: f.description || 'No description provided.',
             image: FARM_HERO_IMAGES[idx % FARM_HERO_IMAGES.length],
           };
@@ -167,13 +265,23 @@ const FarmList = () => {
     fetchManagers();
   }, [fetchFarms, fetchStats, fetchManagers]);
 
-  // Dynamic filter options based on real database contents
+  // ============================================
+  // DYNAMIC FILTER OPTIONS
+  // ============================================
   const locationOptions = useMemo(() => {
     const locs = Array.from(new Set(farms.map((f) => f.location).filter(Boolean)));
     return ['All Locations', ...locs];
   }, [farms]);
 
-  const typeOptions = ['All Types', 'Crop Farm', 'Mixed Farm', 'Livestock Farm', 'General Farm'];
+  const statusOptions = useMemo(() => {
+    const statuses = Array.from(new Set(farms.map((f) => f.status).filter(Boolean)));
+    return ['All Status', ...statuses];
+  }, [farms]);
+
+  const typeOptions = useMemo(() => {
+    const types = Array.from(new Set(farms.map((f) => f.farmType).filter(Boolean)));
+    return ['All Types', ...types];
+  }, [farms]);
 
   // Filtered Farms
   const filteredFarms = useMemo(() => {
@@ -191,9 +299,10 @@ const FarmList = () => {
     });
   }, [farms, filters]);
 
-  // Pagination calculation
-  const totalPages = Math.ceil(filteredFarms.length / itemsPerPage) || 1;
-  const startIndex = (currentPage - 1) * itemsPerPage;
+  // Safe pagination
+  const totalPages = Math.max(1, Math.ceil(filteredFarms.length / itemsPerPage));
+  const safeCurrentPage = Math.min(Math.max(1, currentPage), totalPages);
+  const startIndex = (safeCurrentPage - 1) * itemsPerPage;
   const paginatedFarms = useMemo(() => {
     return filteredFarms.slice(startIndex, startIndex + itemsPerPage);
   }, [filteredFarms, startIndex, itemsPerPage]);
@@ -203,7 +312,44 @@ const FarmList = () => {
     setCurrentPage(1);
   }, [filters]);
 
-  // Open Modal for Add
+  // ============================================
+  // DYNAMIC SPECIES DISTRIBUTION CALCULATION
+  // ============================================
+  const speciesDistribution = useMemo(() => {
+    const targetAnimals = selectedFarm
+      ? (selectedFarm.rawAnimals || [])
+      : farms.flatMap((f) => f.rawAnimals || []);
+
+    if (!targetAnimals.length) return [];
+
+    const counts = {};
+    targetAnimals.forEach((a) => {
+      const type = a.type ? a.type.trim() : 'Other';
+      counts[type] = (counts[type] || 0) + 1;
+    });
+
+    const total = targetAnimals.length;
+    return Object.entries(counts)
+      .map(([type, count], index) => ({
+        type,
+        count,
+        percentage: Math.round((count / total) * 100),
+        color: SPECIES_COLORS[index % SPECIES_COLORS.length],
+        icon: getSpeciesIcon(type),
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [selectedFarm, farms]);
+
+  // Total livestock count
+  const totalLivestockCount = useMemo(() => {
+    return selectedFarm
+      ? (selectedFarm.rawAnimals || []).length
+      : farms.reduce((sum, f) => sum + (f.rawAnimals?.length || 0), 0);
+  }, [selectedFarm, farms]);
+
+  // ============================================
+  // HANDLERS FOR FARMS
+  // ============================================
   const handleOpenAddModal = () => {
     setEditingFarm(null);
     setFormData({
@@ -216,7 +362,6 @@ const FarmList = () => {
     setShowModal(true);
   };
 
-  // Open Modal for Edit
   const handleOpenEditModal = (farm, e) => {
     e.stopPropagation();
     setEditingFarm(farm);
@@ -230,7 +375,6 @@ const FarmList = () => {
     setShowModal(true);
   };
 
-  // Submit Modal (Create / Update in Database)
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     try {
@@ -244,8 +388,10 @@ const FarmList = () => {
 
       if (editingFarm) {
         await farmService.updateFarm(editingFarm.id, payload);
+        showToast(`Farm "${formData.name}" updated successfully!`);
       } else {
         await farmService.createFarm(payload);
+        showToast(`Farm "${formData.name}" created successfully!`);
       }
       setShowModal(false);
       fetchFarms();
@@ -256,17 +402,60 @@ const FarmList = () => {
     }
   };
 
-  // Delete Farm from Database
   const handleDeleteFarm = async (id, e) => {
     e.stopPropagation();
-    if (!window.confirm('Are you sure you want to delete this farm? All associated crops and records will be deleted.')) return;
+    if (!window.confirm('Are you sure you want to delete this farm? All associated crops, animals, and records will be deleted.')) return;
     try {
       await farmService.deleteFarm(id);
+      showToast('Farm deleted successfully.');
       fetchFarms();
       fetchStats();
     } catch (err) {
       console.error('Delete farm error:', err);
       alert(err.response?.data?.error || 'Failed to delete farm');
+    }
+  };
+
+  // ============================================
+  // HANDLERS FOR ANIMALS
+  // ============================================
+  const handleOpenAddAnimalModal = (defaultFarmId = null) => {
+    const targetId = defaultFarmId || (selectedFarm ? selectedFarm.id : (farms.length > 0 ? farms[0].id : ''));
+    setAnimalFormData({
+      farmId: targetId ? String(targetId) : '',
+      name: '',
+      type: 'Cattle',
+      breed: '',
+      age: '',
+      healthStatus: 'HEALTHY',
+    });
+    setShowAnimalModal(true);
+  };
+
+  const handleAnimalSubmit = async (e) => {
+    e.preventDefault();
+    try {
+      if (!animalFormData.farmId) {
+        alert('Please select a farm to assign this animal to.');
+        return;
+      }
+      const payload = {
+        farmId: parseInt(animalFormData.farmId, 10),
+        name: animalFormData.name,
+        type: animalFormData.type,
+        breed: animalFormData.breed,
+        age: animalFormData.age ? parseInt(animalFormData.age, 10) : null,
+        healthStatus: animalFormData.healthStatus,
+      };
+
+      await farmService.createAnimal(payload);
+      showToast(`Livestock "${animalFormData.name}" added successfully!`);
+      setShowAnimalModal(false);
+      fetchFarms();
+      fetchStats();
+    } catch (err) {
+      console.error('Save animal error:', err);
+      alert(err.response?.data?.error || 'Failed to add animal');
     }
   };
 
@@ -308,12 +497,25 @@ const FarmList = () => {
     return 'default';
   };
 
-  const authUserAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(
-    `${authUser?.firstName || 'Admin'} ${authUser?.lastName || 'User'}`
-  )}&background=10b981&color=fff&bold=true`;
+  // Authenticated user dynamic profile
+  const userFullName = authUser
+    ? `${authUser.firstName || ''} ${authUser.lastName || ''}`.trim() || authUser.email || 'User'
+    : 'System Admin';
+  const userRole = typeof authUser?.role === 'object' ? authUser.role.name : authUser?.role || 'Administrator';
+  const authUserAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(userFullName)}&background=047857&color=fff&bold=true`;
+
+  const hasActiveFilters = filters.status !== 'All Status' || filters.location !== 'All Locations' || filters.type !== 'All Types' || filters.search !== '';
 
   return (
     <div className="farms-page-container">
+      {/* ===== NOTIFICATION TOAST ===== */}
+      {notification && (
+        <div className={`farms-toast ${notification.type}`}>
+          <span className="toast-icon">{notification.type === 'success' ? '✓' : 'ℹ️'}</span>
+          <span>{notification.message}</span>
+        </div>
+      )}
+
       {/* ===== LEFT SIDEBAR ===== */}
       <aside className={`farms-sidebar ${sidebarOpen ? '' : 'collapsed'}`}>
         <div className="farms-sidebar-brand">
@@ -409,14 +611,15 @@ const FarmList = () => {
         <div className="sidebar-user-card">
           <div className="user-card-info">
             <div className="user-card-avatar">
-              <img src={authUserAvatar} alt="Admin" className="avatar-img" />
+              <img src={authUserAvatar} alt={userFullName} className="avatar-img" />
               <span className="online-dot"></span>
             </div>
             <div className="user-card-text">
-              <span className="user-card-name">{authUser?.firstName ? `${authUser.firstName} ${authUser?.lastName || ''}`.trim() : 'Admin User'}</span>
-              <span className="user-card-role">{authUser?.role || 'System Administrator'}</span>
+              <span className="user-card-name">{userFullName}</span>
+              <span className="user-card-role">{userRole}</span>
             </div>
           </div>
+          <LogoutButton />
         </div>
       </aside>
 
@@ -447,14 +650,19 @@ const FarmList = () => {
               value={filters.search}
               onChange={(e) => setFilters({ ...filters, search: e.target.value })}
             />
+            {filters.search && (
+              <button className="btn-clear-search" onClick={() => setFilters({ ...filters, search: '' })} title="Clear search">
+                ✕
+              </button>
+            )}
           </div>
 
           <div className="top-nav-right">
             <div className="top-user-profile">
-              <img src={authUserAvatar} alt="Profile" className="top-avatar" />
+              <img src={authUserAvatar} alt={userFullName} className="top-avatar" />
               <div className="top-user-text">
-                <span className="top-user-name">{authUser?.firstName || 'Admin User'}</span>
-                <span className="top-user-role">{authUser?.role || 'System Administrator'}</span>
+                <span className="top-user-name">{userFullName}</span>
+                <span className="top-user-role">{userRole}</span>
               </div>
             </div>
           </div>
@@ -475,13 +683,23 @@ const FarmList = () => {
                 </button>
                 <h1>Farm Management</h1>
               </div>
-              <p>Manage all registered farms, operations, managers and performance from live database records.</p>
+              <p>Manage all registered farm enterprises, crop plots, livestock, managers and performance records.</p>
             </div>
 
-            <button onClick={handleOpenAddModal} className="btn-add-farm">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M12 5v14M5 12h14" /></svg>
-              <span>Add New Farm</span>
-            </button>
+            <div className="header-actions-group">
+              <button onClick={() => handleOpenAddAnimalModal()} className="btn-add-animal">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span>Add Animal</span>
+              </button>
+              <button onClick={handleOpenAddModal} className="btn-add-farm">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M12 5v14M5 12h14" />
+                </svg>
+                <span>Add New Farm</span>
+              </button>
+            </div>
           </div>
 
           {/* 5 REAL STAT CARDS ROW */}
@@ -549,50 +767,60 @@ const FarmList = () => {
               {/* FILTERS TOOLBAR */}
               <div className="filters-toolbar">
                 <div className="filter-left-group">
-                  <div className="table-search-box">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" strokeWidth="2"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg>
-                    <input
-                      type="text"
-                      placeholder="Search farms..."
-                      className="table-search-input"
-                      value={filters.search}
-                      onChange={(e) => setFilters({ ...filters, search: e.target.value })}
-                    />
+                  <div className="filter-select-wrapper">
+                    <label className="filter-field-label">Status</label>
+                    <select
+                      className="filter-select"
+                      value={filters.status}
+                      onChange={(e) => setFilters({ ...filters, status: e.target.value })}
+                    >
+                      {statusOptions.map((st) => (
+                        <option key={st} value={st}>
+                          {st}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
-                  <select
-                    className="filter-select"
-                    value={filters.status}
-                    onChange={(e) => setFilters({ ...filters, status: e.target.value })}
-                  >
-                    <option value="All Status">All Status</option>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                  </select>
+                  <div className="filter-select-wrapper">
+                    <label className="filter-field-label">Location</label>
+                    <select
+                      className="filter-select"
+                      value={filters.location}
+                      onChange={(e) => setFilters({ ...filters, location: e.target.value })}
+                    >
+                      {locationOptions.map((loc) => (
+                        <option key={loc} value={loc}>
+                          {loc}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <select
-                    className="filter-select"
-                    value={filters.location}
-                    onChange={(e) => setFilters({ ...filters, location: e.target.value })}
-                  >
-                    {locationOptions.map((loc) => (
-                      <option key={loc} value={loc}>
-                        {loc}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="filter-select-wrapper">
+                    <label className="filter-field-label">Type</label>
+                    <select
+                      className="filter-select"
+                      value={filters.type}
+                      onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+                    >
+                      {typeOptions.map((typ) => (
+                        <option key={typ} value={typ}>
+                          {typ}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
 
-                  <select
-                    className="filter-select"
-                    value={filters.type}
-                    onChange={(e) => setFilters({ ...filters, type: e.target.value })}
-                  >
-                    {typeOptions.map((typ) => (
-                      <option key={typ} value={typ}>
-                        {typ}
-                      </option>
-                    ))}
-                  </select>
+                  {hasActiveFilters && (
+                    <button
+                      className="btn-reset-filters"
+                      onClick={() => setFilters({ search: '', status: 'All Status', location: 'All Locations', type: 'All Types' })}
+                      title="Reset all filters"
+                    >
+                      <span>Reset Filters</span>
+                    </button>
+                  )}
                 </div>
 
                 <div className="filter-right-group">
@@ -622,7 +850,10 @@ const FarmList = () => {
                     {loading ? (
                       <tr>
                         <td colSpan="8" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
-                          Loading farms from database...
+                          <div className="table-loading-spinner">
+                            <span className="spinner-dot"></span>
+                            <span>Loading farms from database...</span>
+                          </div>
                         </td>
                       </tr>
                     ) : error ? (
@@ -649,7 +880,12 @@ const FarmList = () => {
                             <td>
                               <div className="farm-name-cell">
                                 <img src={farm.image} alt={farm.name} className="farm-thumb-img" />
-                                <span className="farm-name-text">{farm.name}</span>
+                                <div className="farm-name-wrapper">
+                                  <span className="farm-name-text">{farm.name}</span>
+                                  <span className="farm-sub-counts">
+                                    🌱 {farm.cropsCount} crops • 🐄 {farm.animalsCount} animals
+                                  </span>
+                                </div>
                               </div>
                             </td>
                             <td>
@@ -690,6 +926,16 @@ const FarmList = () => {
                             </td>
                             <td>
                               <div className="actions-cell-group" style={{ justifyContent: 'center' }}>
+                                <button
+                                  className="btn-row-action"
+                                  title="Add animal to this farm"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleOpenAddAnimalModal(farm.id);
+                                  }}
+                                >
+                                  🐄
+                                </button>
                                 <button
                                   className="btn-row-action"
                                   title="View details"
@@ -733,28 +979,50 @@ const FarmList = () => {
                 <div className="pagination-controls-group">
                   <button
                     className="btn-page-step"
-                    disabled={currentPage === 1}
-                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    disabled={safeCurrentPage === 1}
+                    onClick={() => setCurrentPage(1)}
+                    title="First page"
                   >
-                    &lt;
+                    «
+                  </button>
+                  <button
+                    className="btn-page-step"
+                    disabled={safeCurrentPage === 1}
+                    onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                    title="Previous page"
+                  >
+                    ‹
                   </button>
 
-                  {Array.from({ length: totalPages }, (_, i) => i + 1).map((pageNum) => (
-                    <button
-                      key={pageNum}
-                      className={`btn-page-step ${currentPage === pageNum ? 'active' : ''}`}
-                      onClick={() => setCurrentPage(pageNum)}
-                    >
-                      {pageNum}
-                    </button>
-                  ))}
+                  {Array.from({ length: totalPages }, (_, i) => i + 1)
+                    .filter((p) => Math.abs(p - safeCurrentPage) <= 2 || p === 1 || p === totalPages)
+                    .map((pageNum, idx, arr) => (
+                      <React.Fragment key={pageNum}>
+                        {idx > 0 && arr[idx - 1] !== pageNum - 1 && <span className="pagination-ellipsis">...</span>}
+                        <button
+                          className={`btn-page-step ${safeCurrentPage === pageNum ? 'active' : ''}`}
+                          onClick={() => setCurrentPage(pageNum)}
+                        >
+                          {pageNum}
+                        </button>
+                      </React.Fragment>
+                    ))}
 
                   <button
                     className="btn-page-step"
-                    disabled={currentPage === totalPages}
+                    disabled={safeCurrentPage === totalPages}
                     onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                    title="Next page"
                   >
-                    &gt;
+                    ›
+                  </button>
+                  <button
+                    className="btn-page-step"
+                    disabled={safeCurrentPage === totalPages}
+                    onClick={() => setCurrentPage(totalPages)}
+                    title="Last page"
+                  >
+                    »
                   </button>
 
                   <select
@@ -792,10 +1060,17 @@ const FarmList = () => {
 
                 <div className="overview-title-block">
                   <h2 className="overview-farm-name">{selectedFarm.name}</h2>
-                  <div>
+                  <div className="overview-badge-row">
                     <span className={`farm-type-badge ${getTypeBadgeClass(selectedFarm.farmType)}`}>
                       {selectedFarm.farmType}
                     </span>
+                    <button
+                      className="btn-quick-add-animal"
+                      onClick={() => handleOpenAddAnimalModal(selectedFarm.id)}
+                      title="Add livestock to this farm"
+                    >
+                      + Add Animal
+                    </button>
                   </div>
                 </div>
 
@@ -839,6 +1114,60 @@ const FarmList = () => {
                     <span className="detail-row-icon">🐄</span>
                     <span className="detail-row-label">Livestock ({selectedFarm.animalsCount})</span>
                     <span className="detail-row-value">{selectedFarm.animalsSummary}</span>
+                  </div>
+
+                  {/* SPECIES DISTRIBUTION SECTION */}
+                  <div className="species-distribution-block">
+                    <div className="species-dist-header">
+                      <span className="species-dist-title">📊 Species Distribution ({totalLivestockCount})</span>
+                      <button
+                        className="species-add-link"
+                        onClick={() => handleOpenAddAnimalModal(selectedFarm.id)}
+                      >
+                        + Add
+                      </button>
+                    </div>
+
+                    {speciesDistribution.length > 0 ? (
+                      <>
+                        {/* Multi-segment distribution progress bar */}
+                        <div className="species-bar-container">
+                          {speciesDistribution.map((sp) => (
+                            <div
+                              key={sp.type}
+                              className="species-bar-segment"
+                              style={{ width: `${sp.percentage}%`, backgroundColor: sp.color }}
+                              title={`${sp.type}: ${sp.count} animals (${sp.percentage}%)`}
+                            />
+                          ))}
+                        </div>
+
+                        {/* Species grid items */}
+                        <div className="species-tags-grid">
+                          {speciesDistribution.map((sp) => (
+                            <div key={sp.type} className="species-tag-card">
+                              <div className="species-tag-icon-wrap" style={{ backgroundColor: `${sp.color}15`, color: sp.color }}>
+                                <span>{sp.icon}</span>
+                              </div>
+                              <div className="species-tag-info">
+                                <span className="species-tag-type">{sp.type}</span>
+                                <span className="species-tag-count">{sp.count} head ({sp.percentage}%)</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="species-empty-box">
+                        <p>No livestock recorded for this farm yet.</p>
+                        <button
+                          className="btn-species-empty-add"
+                          onClick={() => handleOpenAddAnimalModal(selectedFarm.id)}
+                        >
+                          + Add First Livestock
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   <div className="overview-detail-row">
@@ -1043,6 +1372,7 @@ const FarmList = () => {
                   className="form-input-control"
                   value={formData.ownerId}
                   onChange={(e) => setFormData({ ...formData, ownerId: e.target.value })}
+                  required
                 >
                   <option value="">Select Manager</option>
                   {managers.map((m) => (
@@ -1076,8 +1406,132 @@ const FarmList = () => {
           </div>
         </div>
       )}
+
+      {/* ===== ADD ANIMAL MODAL ===== */}
+      {showAnimalModal && (
+        <div className="farm-modal-overlay">
+          <div className="farm-modal-content">
+            <button className="modal-close-btn" onClick={() => setShowAnimalModal(false)}>✕</button>
+            <h2 className="farm-form-title">🐄 Add New Livestock / Animal</h2>
+            <p className="farm-form-sub">Register livestock or animal batch directly to a farm.</p>
+
+            <form onSubmit={handleAnimalSubmit}>
+              <div className="form-group-field">
+                <label>Assign to Farm *</label>
+                <select
+                  className="form-input-control"
+                  value={animalFormData.farmId}
+                  onChange={(e) => setAnimalFormData({ ...animalFormData, farmId: e.target.value })}
+                  required
+                >
+                  <option value="">Select Farm</option>
+                  {farms.map((f) => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({f.location})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="form-grid-row">
+                <div className="form-group-field">
+                  <label>Animal Name / Tag ID *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Cow #104 or Batch Alpha"
+                    className="form-input-control"
+                    value={animalFormData.name}
+                    onChange={(e) => setAnimalFormData({ ...animalFormData, name: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group-field">
+                  <label>Species / Type *</label>
+                  <select
+                    className="form-input-control"
+                    value={animalFormData.type}
+                    onChange={(e) => setAnimalFormData({ ...animalFormData, type: e.target.value })}
+                    required
+                  >
+                    <option value="Cattle">🐄 Cattle / Cow</option>
+                    <option value="Dairy Cattle">🥛 Dairy Cattle</option>
+                    <option value="Beef Cattle">🥩 Beef Cattle</option>
+                    <option value="Goats">🐐 Goats</option>
+                    <option value="Sheep">🐑 Sheep</option>
+                    <option value="Pigs">🐖 Pigs / Swine</option>
+                    <option value="Poultry">🐔 Poultry / Broilers</option>
+                    <option value="Layers">🥚 Layer Hens</option>
+                    <option value="Ducks">🦆 Ducks</option>
+                    <option value="Fish">🐟 Aquaculture / Fish</option>
+                    <option value="Horses">🐎 Horses</option>
+                    <option value="Other">🐾 Other Species</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="form-grid-row">
+                <div className="form-group-field">
+                  <label>Breed</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Holstein Friesian, Boer, Dorper"
+                    className="form-input-control"
+                    value={animalFormData.breed}
+                    onChange={(e) => setAnimalFormData({ ...animalFormData, breed: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group-field">
+                  <label>Age (Months / Years)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="e.g. 24"
+                    className="form-input-control"
+                    value={animalFormData.age}
+                    onChange={(e) => setAnimalFormData({ ...animalFormData, age: e.target.value })}
+                  />
+                </div>
+              </div>
+
+              <div className="form-group-field">
+                <label>Health Status *</label>
+                <select
+                  className="form-input-control"
+                  value={animalFormData.healthStatus}
+                  onChange={(e) => setAnimalFormData({ ...animalFormData, healthStatus: e.target.value })}
+                  required
+                >
+                  <option value="HEALTHY">🟢 Healthy & Productive</option>
+                  <option value="TREATMENT">🟡 Under Treatment</option>
+                  <option value="SICK">🔴 Sick / Requires Attention</option>
+                  <option value="QUARANTINE">🟣 In Quarantine</option>
+                  <option value="RECOVERING">🔵 Recovering</option>
+                </select>
+              </div>
+
+              <div className="form-actions-bar">
+                <button type="button" className="btn-form-cancel" onClick={() => setShowAnimalModal(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn-form-submit">
+                  Save Livestock Record
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
+
+// Wrap with Error Boundary for resilience
+const FarmList = () => (
+  <FarmErrorBoundary>
+    <FarmListView />
+  </FarmErrorBoundary>
+);
 
 export default FarmList;

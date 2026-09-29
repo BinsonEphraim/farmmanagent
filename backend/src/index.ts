@@ -5,6 +5,11 @@ import morgan from 'morgan';
 import authRoutes from './routes/authRoutes.js';
 import userRoutes from './routes/userRoutes.js';
 import farmRoutes from './routes/farmRoutes.js';
+import financeRoutes from './routes/financeRoutes.js';
+import mdRoutes from './routes/mdRoutes.js';
+import employeeRoutes from './routes/employeeRoutes.js';
+import hrRoutes from './routes/hrRoutes.js';
+import storekeeperRoutes from './routes/storekeeperRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -23,6 +28,11 @@ app.use(morgan('dev'));
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/farms', farmRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/md', mdRoutes);
+app.use('/api/employee', employeeRoutes);
+app.use('/api/hr', hrRoutes);
+app.use('/api/storekeeper', storekeeperRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

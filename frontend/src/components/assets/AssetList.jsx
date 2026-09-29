@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { farmService } from '../../services/farmService';
 import { useAuth } from '../../context/AuthContext';
 import './AssetList.css';
+import LogoutButton from '../common/LogoutButton';
 
 // Preset High-Resolution Equipment Images
 const ASSET_IMAGES = {
@@ -343,7 +344,7 @@ const AssetList = () => {
   const loadFarms = useCallback(async () => {
     try {
       const data = await farmService.getAllFarms({ limit: 100 });
-      setFarms(data.farms || []);
+      setFarms(Array.isArray(data) ? data : data.farms || []);
     } catch (err) {
       console.error('Failed to load farms:', err);
     }
@@ -739,6 +740,7 @@ const AssetList = () => {
                 <span className="user-role">{authUser?.role || 'System Administrator'}</span>
               </div>
             </div>
+            <LogoutButton />
           </div>
         </header>
 

@@ -15,8 +15,8 @@ export const isAdmin = async (req, res, next) => {
         if (!user) {
             return res.status(401).json({ error: 'User not found' });
         }
-        // Check if role is Administrator
-        if (user.role.name !== 'Administrator') {
+        // Both names exist in the database for compatibility with older seeded data.
+        if (!['Administrator', 'System Administrator'].includes(user.role.name)) {
             return res.status(403).json({ error: 'Admin access required' });
         }
         next();

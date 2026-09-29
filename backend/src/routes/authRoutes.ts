@@ -1,6 +1,5 @@
 import { Router } from 'express';
 import { 
-  register, 
   login, 
   getProfile,
   verifyEmail,
@@ -16,9 +15,6 @@ const router = Router();
 // ============================================
 // PUBLIC ROUTES (No authentication required)
 // ============================================
-
-// Register a new user
-router.post('/register', register);
 
 // Login user
 router.post('/login', login);

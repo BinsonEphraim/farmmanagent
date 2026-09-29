@@ -654,10 +654,37 @@ export const createCrop = async (req: Request, res: Response) => {
 
     const farm = await db.farm.findFirst({
       where: farmWhereCondition,
+      include: {
+        crops: {
+          where: {
+            status: { in: ['PLANTED', 'GROWING'] },
+          },
+        },
+      },
     });
 
     if (!farm) {
       return res.status(404).json({ error: 'Farm not found or unauthorized' });
+    }
+
+    const requestedArea = area ? parseFloat(area) : null;
+    const farmSize = farm.size ? Number(farm.size) : null;
+
+    if (farmSize !== null && farmSize > 0 && requestedArea !== null && requestedArea > 0) {
+      if (requestedArea > farmSize) {
+        return res.status(400).json({
+          error: `Planted area (${requestedArea} ha) cannot exceed total farm plot size (${farmSize} ha) for "${farm.name}".`,
+        });
+      }
+
+      const activePlantedArea = (farm.crops || []).reduce((sum: number, c: any) => sum + (Number(c.area) || 0), 0);
+      const remainingAvailableArea = Math.max(0, farmSize - activePlantedArea);
+
+      if (requestedArea > remainingAvailableArea) {
+        return res.status(400).json({
+          error: `Planted area (${requestedArea} ha) exceeds remaining available plot capacity on "${farm.name}". Available: ${remainingAvailableArea.toFixed(1)} ha (${activePlantedArea.toFixed(1)} ha of ${farmSize} ha is already occupied by active crops).`,
+        });
+      }
     }
 
     const crop = await db.crop.create({
@@ -667,7 +694,7 @@ export const createCrop = async (req: Request, res: Response) => {
         plantingDate: new Date(plantingDate || Date.now()),
         harvestDate: harvestDate ? new Date(harvestDate) : null,
         yield: cropYield ? parseFloat(cropYield) : null,
-        area: area ? parseFloat(area) : null,
+        area: requestedArea,
         status: status || 'PLANTED',
         farmId: parseId(farmId),
       },
@@ -746,14 +773,48 @@ export const updateCrop = async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Crop not found' });
     }
 
+    const targetFarmId = farmId ? parseId(farmId) : crop.farmId;
+    const farm = await db.farm.findUnique({
+      where: { id: targetFarmId },
+      include: {
+        crops: {
+          where: {
+            id: { not: parseId(id) },
+            status: { in: ['PLANTED', 'GROWING'] },
+          },
+        },
+      },
+    });
+
+    const newStatus = status || crop.status;
+    const requestedArea = area !== undefined ? (area ? parseFloat(area) : null) : crop.area;
+
+    if (farm && farm.size && requestedArea && (newStatus === 'PLANTED' || newStatus === 'GROWING')) {
+      const farmSize = Number(farm.size);
+      if (requestedArea > farmSize) {
+        return res.status(400).json({
+          error: `Planted area (${requestedArea} ha) cannot exceed total farm plot size (${farmSize} ha) for "${farm.name}".`,
+        });
+      }
+
+      const otherActiveArea = (farm.crops || []).reduce((sum: number, c: any) => sum + (Number(c.area) || 0), 0);
+      const remainingAvailableArea = Math.max(0, farmSize - otherActiveArea);
+
+      if (requestedArea > remainingAvailableArea) {
+        return res.status(400).json({
+          error: `Planted area (${requestedArea} ha) exceeds remaining available plot capacity on "${farm.name}". Available: ${remainingAvailableArea.toFixed(1)} ha (${otherActiveArea.toFixed(1)} ha of ${farmSize} ha is already occupied by other crops).`,
+        });
+      }
+    }
+
     const updateData: any = {
       name: name || crop.name,
       variety: variety !== undefined ? variety : crop.variety,
       plantingDate: plantingDate ? new Date(plantingDate) : crop.plantingDate,
       harvestDate: harvestDate ? new Date(harvestDate) : crop.harvestDate,
       yield: cropYield !== undefined ? (cropYield ? parseFloat(cropYield) : null) : crop.yield,
-      area: area !== undefined ? (area ? parseFloat(area) : null) : crop.area,
-      status: status || crop.status,
+      area: requestedArea,
+      status: newStatus,
     };
 
     if (farmId) {
@@ -907,13 +968,19 @@ export const createAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Verify farm belongs to user
+    const isAdmin = await checkAdmin(userId, (req as any).user);
+    const farmWhereCondition: any = { id: parseId(farmId) };
+    if (!isAdmin) {
+      farmWhereCondition.ownerId = userId;
+    }
+
+    // Verify farm belongs to user or user is admin
     const farm = await db.farm.findFirst({
-      where: { id: parseId(farmId), ownerId: userId },
+      where: farmWhereCondition,
     });
 
     if (!farm) {
-      return res.status(404).json({ error: 'Farm not found' });
+      return res.status(404).json({ error: 'Farm not found or unauthorized' });
     }
 
     const animal = await db.animal.create({
@@ -947,11 +1014,14 @@ export const getAnimalsByFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const isAdmin = await checkAdmin(userId, (req as any).user);
+    const whereCondition: any = { farmId: parseId(farmId) };
+    if (!isAdmin) {
+      whereCondition.farm = { ownerId: userId };
+    }
+
     const animals = await db.animal.findMany({
-      where: {
-        farmId: parseId(farmId),
-        farm: { ownerId: userId },
-      },
+      where: whereCondition,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -973,11 +1043,14 @@ export const updateAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const isAdmin = await checkAdmin(userId, (req as any).user);
+    const whereCondition: any = { id: parseId(id) };
+    if (!isAdmin) {
+      whereCondition.farm = { ownerId: userId };
+    }
+
     const animal = await db.animal.findFirst({
-      where: {
-        id: parseId(id),
-        farm: { ownerId: userId },
-      },
+      where: whereCondition,
     });
 
     if (!animal) {
@@ -1015,11 +1088,14 @@ export const deleteAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
+    const isAdmin = await checkAdmin(userId, (req as any).user);
+    const whereCondition: any = { id: parseId(id) };
+    if (!isAdmin) {
+      whereCondition.farm = { ownerId: userId };
+    }
+
     const animal = await db.animal.findFirst({
-      where: {
-        id: parseId(id),
-        farm: { ownerId: userId },
-      },
+      where: whereCondition,
     });
 
     if (!animal) {

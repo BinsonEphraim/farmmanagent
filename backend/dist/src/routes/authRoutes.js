@@ -1,12 +1,10 @@
 import { Router } from 'express';
-import { register, login, getProfile, verifyEmail, updateProfile, forgotPassword, resetPassword, resendVerification } from '../controllers/authController.js';
+import { login, getProfile, verifyEmail, updateProfile, forgotPassword, resetPassword, resendVerification } from '../controllers/authController.js';
 import { authenticate } from '../middleware/auth.js';
 const router = Router();
 // ============================================
 // PUBLIC ROUTES (No authentication required)
 // ============================================
-// Register a new user
-router.post('/register', register);
 // Login user
 router.post('/login', login);
 // Verify email

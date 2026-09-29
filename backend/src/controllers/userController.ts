@@ -7,7 +7,7 @@ import { sendVerificationEmail } from '../utils/email.js';
 // GET ALL USERS (Admin only)
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
-    const { search, role, status, page = 1, limit = 10 } = req.query;
+    const { search, role, status, farmId, page = 1, limit = 10 } = req.query;
 
     // Build filter conditions
     const where: any = {};
@@ -28,12 +28,27 @@ export const getAllUsers = async (req: Request, res: Response) => {
       where.isActive = status === 'active';
     }
 
+    if (farmId && farmId !== 'all') {
+      if (farmId === 'unassigned') {
+        where.farmId = null;
+      } else {
+        where.farmId = Number(farmId);
+      }
+    }
+
     // Get users with pagination
     const [users, total] = await Promise.all([
       prisma.user.findMany({
         where,
         include: {
           role: true,
+          farm: {
+            select: {
+              id: true,
+              name: true,
+              location: true,
+            },
+          },
         },
         skip: (Number(page) - 1) * Number(limit),
         take: Number(limit),
@@ -71,6 +86,13 @@ export const getUserById = async (req: Request, res: Response) => {
       where: { id: Number(id) },
       include: {
         role: true,
+        farm: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+          },
+        },
       },
     });
 
@@ -93,7 +115,7 @@ export const getUserById = async (req: Request, res: Response) => {
 // ============================================
 export const createUser = async (req: Request, res: Response) => {
   try {
-    const { email, password, firstName, lastName, roleName, sendVerification = true } = req.body;
+    const { email, password, firstName, lastName, roleName, farmId, sendVerification = true } = req.body;
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -119,7 +141,7 @@ export const createUser = async (req: Request, res: Response) => {
     // Generate verification token
     const { token: verificationToken, expires: verificationTokenExpires } = generateVerificationToken();
 
-    // Create user
+    // Create user with optional farm assignment
     const user = await prisma.user.create({
       data: {
         email,
@@ -127,12 +149,20 @@ export const createUser = async (req: Request, res: Response) => {
         firstName,
         lastName,
         roleId: role.id,
+        farmId: farmId ? Number(farmId) : null,
         isVerified: false,
         verificationToken,
         verificationTokenExpires,
       },
       include: {
         role: true,
+        farm: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+          },
+        },
       },
     });
 
@@ -161,7 +191,7 @@ export const createUser = async (req: Request, res: Response) => {
 export const updateUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const { firstName, lastName, roleName, isActive } = req.body;
+    const { firstName, lastName, roleName, farmId, isActive } = req.body;
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
@@ -178,6 +208,9 @@ export const updateUser = async (req: Request, res: Response) => {
     if (firstName) updateData.firstName = firstName;
     if (lastName) updateData.lastName = lastName;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
+    if (farmId !== undefined) {
+      updateData.farmId = farmId ? Number(farmId) : null;
+    }
 
     // Update role if provided
     if (roleName) {
@@ -197,6 +230,13 @@ export const updateUser = async (req: Request, res: Response) => {
       data: updateData,
       include: {
         role: true,
+        farm: {
+          select: {
+            id: true,
+            name: true,
+            location: true,
+          },
+        },
       },
     });
 
@@ -282,7 +322,12 @@ export const getUserStats = async (req: Request, res: Response) => {
       prisma.user.findMany({
         take: 5,
         orderBy: { createdAt: 'desc' },
-        include: { role: true },
+        include: {
+          role: true,
+          farm: {
+            select: { id: true, name: true },
+          },
+        },
       }),
     ]);
 
@@ -321,9 +366,10 @@ export const getUserStats = async (req: Request, res: Response) => {
         hour: '2-digit',
         minute: '2-digit',
       });
+      const farmText = u.farm?.name ? ` • Assigned to ${u.farm.name}` : '';
       return {
         id: u.id,
-        text: `User ${u.firstName} ${u.lastName} registered with role ${u.role?.name || 'User'}`,
+        text: `User ${u.firstName} ${u.lastName} registered as ${u.role?.name || 'User'}${farmText}`,
         time: formattedTime,
         avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.firstName + ' ' + u.lastName)}&background=10b981&color=fff&bold=true`,
       };

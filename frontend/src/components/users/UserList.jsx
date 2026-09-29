@@ -1,16 +1,32 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { userService } from '../../services/userService';
+import { farmService } from '../../services/farmService';
 import { useAuth } from '../../context/AuthContext';
 import UserForm from './UserForm';
 import './UserList.css';
+import LogoutButton from '../common/LogoutButton';
+
+const DEFAULT_SYSTEM_ROLES = [
+  'System Administrator',
+  'Administrator',
+  'Managing Director',
+  'Finance Manager',
+  'Human Resources Manager',
+  'HR Manager',
+  'Farm Manager',
+  'Storekeeper',
+  'Employee/Staff',
+  'Employee',
+].map((name, id) => ({ id: `default-${id}`, name }));
 
 const UserList = () => {
   const { user: authUser } = useAuth();
   const navigate = useNavigate();
 
   const [users, setUsers] = useState([]);
-  const [roles, setRoles] = useState([]);
+  const [roles, setRoles] = useState(DEFAULT_SYSTEM_ROLES);
+  const [farms, setFarms] = useState([]);
   const [stats, setStats] = useState({
     totalUsers: 0,
     activeUsers: 0,
@@ -36,6 +52,7 @@ const UserList = () => {
   const [filters, setFilters] = useState({
     search: '',
     role: '',
+    farmId: '',
   });
 
   const [showForm, setShowForm] = useState(false);
@@ -53,6 +70,7 @@ const UserList = () => {
         limit: pagination.limit,
         status: statusFilter,
         role: filters.role,
+        farmId: filters.farmId,
         search: filters.search,
       });
 
@@ -88,7 +106,7 @@ const UserList = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.page, pagination.limit, activeTab, filters.role, filters.search]);
+  }, [pagination.page, pagination.limit, activeTab, filters.role, filters.farmId, filters.search]);
 
   // Fetch Stats & Role Metrics
   const fetchStats = useCallback(async () => {
@@ -110,10 +128,23 @@ const UserList = () => {
     try {
       const data = await userService.getAllRoles();
       if (Array.isArray(data)) {
-        setRoles(data);
+        setRoles(data.length > 0 ? data : DEFAULT_SYSTEM_ROLES);
       }
     } catch (err) {
       console.error('Error fetching roles:', err);
+      setRoles(DEFAULT_SYSTEM_ROLES);
+    }
+  }, []);
+
+  // Fetch All Farms for Dropdowns & Assignments
+  const fetchFarms = useCallback(async () => {
+    try {
+      const data = await farmService.getAllFarms();
+      if (Array.isArray(data)) {
+        setFarms(data);
+      }
+    } catch (err) {
+      console.error('Error fetching farms:', err);
     }
   }, []);
 
@@ -124,7 +155,8 @@ const UserList = () => {
   useEffect(() => {
     fetchStats();
     fetchRoles();
-  }, [fetchStats, fetchRoles]);
+    fetchFarms();
+  }, [fetchStats, fetchRoles, fetchFarms]);
 
   const getRoleType = (roleName) => {
     if (!roleName) return 'default';
@@ -147,6 +179,11 @@ const UserList = () => {
 
   const handleRoleFilter = (e) => {
     setFilters((prev) => ({ ...prev, role: e.target.value }));
+    setPagination((prev) => ({ ...prev, page: 1 }));
+  };
+
+  const handleFarmFilter = (e) => {
+    setFilters((prev) => ({ ...prev, farmId: e.target.value }));
     setPagination((prev) => ({ ...prev, page: 1 }));
   };
 
@@ -176,13 +213,15 @@ const UserList = () => {
       alert('No user data to export');
       return;
     }
-    const headers = ['ID', 'First Name', 'Last Name', 'Email', 'Role', 'Status', 'Last Login'];
+    const headers = ['ID', 'First Name', 'Last Name', 'Email', 'Role', 'Assigned Farm', 'Farm Location', 'Status', 'Last Login'];
     const rows = users.map((u) => [
       u.id,
       `"${u.firstName || ''}"`,
       `"${u.lastName || ''}"`,
       `"${u.email || ''}"`,
       `"${u.role?.name || ''}"`,
+      `"${u.farm?.name || 'Headquarters / Global'}"`,
+      `"${u.farm?.location || 'All Locations'}"`,
       u.isActive ? 'Active' : 'Inactive',
       `"${u.formattedLastLogin || 'Never'}"`,
     ]);
@@ -267,6 +306,7 @@ const UserList = () => {
               <span className="user-card-role">{authUser?.role || 'Admin'}</span>
             </div>
           </div>
+          <LogoutButton />
         </div>
       </aside>
 
@@ -426,6 +466,21 @@ const UserList = () => {
                 <div className="table-right-tools">
                   <select
                     className="role-select-dropdown"
+                    value={filters.farmId}
+                    onChange={handleFarmFilter}
+                    style={{ minWidth: '150px' }}
+                  >
+                    <option value="">Filter All Farms</option>
+                    <option value="unassigned">🏢 Headquarters / Global</option>
+                    {farms.map((f) => (
+                      <option key={f.id} value={f.id}>
+                        🌾 {f.name}
+                      </option>
+                    ))}
+                  </select>
+
+                  <select
+                    className="role-select-dropdown"
                     value={filters.role}
                     onChange={handleRoleFilter}
                   >
@@ -478,6 +533,11 @@ const UserList = () => {
                           <span>Role</span>
                         </div>
                       </th>
+                      <th>
+                        <div className="th-content">
+                          <span>Assigned Farm</span>
+                        </div>
+                      </th>
                       <th>Status</th>
                       <th>Last Login</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
@@ -486,19 +546,19 @@ const UserList = () => {
                   <tbody>
                     {loading ? (
                       <tr>
-                        <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#64748b' }}>
                           Loading users from database...
                         </td>
                       </tr>
                     ) : error ? (
                       <tr>
-                        <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#ef4444' }}>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#ef4444' }}>
                           {error}
                         </td>
                       </tr>
                     ) : users.length === 0 ? (
                       <tr>
-                        <td colSpan="6" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
+                        <td colSpan="7" style={{ textAlign: 'center', padding: '36px', color: '#94a3b8' }}>
                           No users found matching your criteria
                         </td>
                       </tr>
@@ -523,6 +583,24 @@ const UserList = () => {
                             <span className={`role-pill-badge ${user.roleType || 'default'}`}>
                               {user.role?.name || 'User'}
                             </span>
+                          </td>
+                          <td>
+                            {user.farm ? (
+                              <div className="user-farm-badge">
+                                <span className="farm-pin-icon">🌾</span>
+                                <div className="farm-badge-info">
+                                  <span className="farm-badge-name">{user.farm.name}</span>
+                                  {user.farm.location && (
+                                    <span className="farm-badge-location">{user.farm.location}</span>
+                                  )}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="farm-unassigned-tag">
+                                <span>🏢</span>
+                                <span>Headquarters / Global</span>
+                              </span>
+                            )}
                           </td>
                           <td>
                             <span className={`status-dot-indicator ${user.isActive ? 'active' : 'inactive'}`}>
@@ -742,6 +820,7 @@ const UserList = () => {
             <UserForm
               user={editingUser}
               roles={roles}
+              farms={farms}
               onSuccess={() => {
                 setShowForm(false);
                 fetchUsers();
@@ -769,9 +848,21 @@ const UserList = () => {
               </h2>
               <p style={{ margin: '0 0 16px', color: '#64748b', fontSize: '13px' }}>User ID: #{viewingUser.id}</p>
 
-              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '14px' }}>
+              <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', textAlign: 'left', display: 'flex', flexDirection: 'column', gap: '10px', fontSize: '14px' }}>
                 <div><strong>Email:</strong> {viewingUser.email}</div>
                 <div><strong>Role:</strong> {viewingUser.role?.name || 'User'}</div>
+                <div>
+                  <strong>Assigned Farm:</strong>{' '}
+                  {viewingUser.farm ? (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#ecfdf5', color: '#047857', padding: '3px 10px', borderRadius: '6px', fontWeight: '600', fontSize: '13px' }}>
+                      🌾 {viewingUser.farm.name} {viewingUser.farm.location ? `(${viewingUser.farm.location})` : ''}
+                    </span>
+                  ) : (
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', color: '#64748b', padding: '3px 10px', borderRadius: '6px', fontSize: '13px' }}>
+                      🏢 Headquarters / Global (No specific farm)
+                    </span>
+                  )}
+                </div>
                 <div><strong>Status:</strong> {viewingUser.isActive ? 'Active' : 'Inactive'}</div>
                 <div><strong>Verified:</strong> {viewingUser.isVerified ? 'Yes' : 'No'}</div>
                 <div><strong>Last Login:</strong> {viewingUser.formattedLastLogin}</div>

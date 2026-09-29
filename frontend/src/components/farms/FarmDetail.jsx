@@ -121,7 +121,7 @@ const FarmDetail = () => {
         )}
 
         {showCropForm && (
-          <CropForm farmId={id} onSuccess={() => { fetchFarm(); setShowCropForm(false); }} />
+          <CropForm farmId={id} farm={farm} onSuccess={() => { fetchFarm(); setShowCropForm(false); }} />
         )}
 
         <div style={{ marginTop: '14px' }}>
@@ -180,7 +180,7 @@ const FarmDetail = () => {
 // CROP FORM (Inline)
 // ============================================
 
-const CropForm = ({ farmId, onSuccess }) => {
+const CropForm = ({ farmId, farm, onSuccess }) => {
   const [formData, setFormData] = useState({
     name: '',
     variety: '',
@@ -199,16 +199,24 @@ const CropForm = ({ farmId, onSuccess }) => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const reqArea = parseFloat(formData.area) || 0;
+    const farmSize = farm?.size ? Number(farm.size) : 0;
+
+    if (farmSize > 0 && reqArea > farmSize) {
+      alert(`❌ Logic Error: Planted area (${reqArea} ha) cannot exceed total farm plot size (${farmSize} ha) for "${farm?.name}".`);
+      return;
+    }
+
     setLoading(true);
     try {
       await farmService.createCrop({
         ...formData,
         farmId: parseInt(farmId),
-        area: parseFloat(formData.area),
+        area: reqArea,
       });
       onSuccess();
     } catch (error) {
-      alert('Failed to add crop');
+      alert(error.response?.data?.error || 'Failed to add crop');
       console.error(error);
     }
     setLoading(false);

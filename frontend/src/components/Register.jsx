@@ -8,7 +8,7 @@ const Register = () => {
     password: '',
     firstName: '',
     lastName: '',
-    roleName: 'Employee',
+    roleName: 'Employee/Staff',
   });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -123,22 +123,23 @@ const Register = () => {
               />
             </div>
 
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Role</label>
-              <select
-                name="roleName"
-                value={formData.roleName}
-                onChange={handleChange}
-                style={styles.input}
-              >
-                <option value="Administrator">Administrator</option>
-                <option value="Managing Director">Managing Director</option>
-                <option value="Finance Manager">Finance Manager</option>
-                <option value="Farm Manager">Farm Manager</option>
-                <option value="HR Manager">HR Manager</option>
-                <option value="Employee">Employee</option>
-              </select>
-            </div>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Official Role</label>
+                <select
+                  name="roleName"
+                  value={formData.roleName}
+                  onChange={handleChange}
+                  style={styles.input}
+                >
+                  <option value="System Administrator">System Administrator</option>
+                  <option value="Managing Director">Managing Director</option>
+                  <option value="Finance Manager">Finance Manager</option>
+                  <option value="Human Resources Manager">Human Resources Manager</option>
+                  <option value="Farm Manager">Farm Manager</option>
+                  <option value="Storekeeper">Storekeeper</option>
+                  <option value="Employee/Staff">Employee/Staff</option>
+                </select>
+              </div>
 
             <button
               type="submit"

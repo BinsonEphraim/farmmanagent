@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { farmService } from '../../services/farmService';
 import { useAuth } from '../../context/AuthContext';
 import './CropList.css';
+import LogoutButton from '../common/LogoutButton';
 
 // High-resolution crop photos tailored for visual identification
 const CROP_IMAGES = {
@@ -332,15 +333,40 @@ const CropList = ({ defaultTab = 'overview' }) => {
     setShowDetailModal(true);
   };
 
+  // Helper to get farm capacity for crop validation
+  const getFarmCapacity = (farmId, excludeCropId = null) => {
+    const selectedFarmObj = farms.find((f) => String(f.id) === String(farmId));
+    const totalFarmSize = selectedFarmObj ? (Number(selectedFarmObj.size) || 0) : 0;
+    const currentlyPlanted = crops
+      .filter((c) => String(c.farmId) === String(farmId) && (c.status === 'PLANTED' || c.status === 'GROWING') && (excludeCropId ? c.id !== excludeCropId : true))
+      .reduce((sum, c) => sum + (Number(c.area) || 0), 0);
+    const availableCapacity = Math.max(0, totalFarmSize - currentlyPlanted);
+    return { selectedFarmObj, totalFarmSize, currentlyPlanted, availableCapacity };
+  };
+
   // Submit Add Crop
   const handleAddSubmit = async (e) => {
     e.preventDefault();
+    const requestedArea = parseFloat(formData.area) || 0;
+    const { selectedFarmObj, totalFarmSize, availableCapacity } = getFarmCapacity(formData.farmId);
+
+    if (selectedFarmObj && totalFarmSize > 0) {
+      if (requestedArea > totalFarmSize) {
+        alert(`❌ Logic Error: Planted area (${requestedArea} ha) cannot exceed total farm plot size (${totalFarmSize} ha) for "${selectedFarmObj.name}".`);
+        return;
+      }
+      if (requestedArea > availableCapacity && (formData.status === 'PLANTED' || formData.status === 'GROWING')) {
+        alert(`❌ Plot Capacity Exceeded: "${selectedFarmObj.name}" has only ${availableCapacity.toFixed(1)} ha available (${totalFarmSize - availableCapacity} ha currently planted of ${totalFarmSize} ha total).`);
+        return;
+      }
+    }
+
     try {
       await farmService.createCrop({
         farmId: parseInt(formData.farmId, 10),
         name: formData.name,
         variety: formData.variety,
-        area: parseFloat(formData.area) || 0,
+        area: requestedArea,
         yield: parseFloat(formData.yield) || 0,
         plantingDate: formData.plantingDate,
         harvestDate: formData.harvestDate || null,
@@ -359,12 +385,26 @@ const CropList = ({ defaultTab = 'overview' }) => {
   // Submit Edit Crop
   const handleEditSubmit = async (e) => {
     e.preventDefault();
+    const requestedArea = parseFloat(formData.area) || 0;
+    const { selectedFarmObj, totalFarmSize, availableCapacity } = getFarmCapacity(formData.farmId, selectedCrop?.id);
+
+    if (selectedFarmObj && totalFarmSize > 0) {
+      if (requestedArea > totalFarmSize) {
+        alert(`❌ Logic Error: Planted area (${requestedArea} ha) cannot exceed total farm plot size (${totalFarmSize} ha) for "${selectedFarmObj.name}".`);
+        return;
+      }
+      if (requestedArea > availableCapacity && (formData.status === 'PLANTED' || formData.status === 'GROWING')) {
+        alert(`❌ Plot Capacity Exceeded: "${selectedFarmObj.name}" has only ${availableCapacity.toFixed(1)} ha available.`);
+        return;
+      }
+    }
+
     try {
       await farmService.updateCrop(selectedCrop.id, {
         farmId: parseInt(formData.farmId, 10),
         name: formData.name,
         variety: formData.variety,
-        area: parseFloat(formData.area) || 0,
+        area: requestedArea,
         yield: parseFloat(formData.yield) || 0,
         plantingDate: formData.plantingDate,
         harvestDate: formData.harvestDate || null,
@@ -732,6 +772,7 @@ const CropList = ({ defaultTab = 'overview' }) => {
                 <span className="top-user-role">{authUser?.role || 'Farm Manager'}</span>
               </div>
             </div>
+            <LogoutButton />
           </div>
         </header>
 
@@ -2111,16 +2152,45 @@ const CropList = ({ defaultTab = 'overview' }) => {
                 </div>
 
                 <div className="form-field-group">
-                  <label>Planted Area (Hectares) *</label>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <label>Planted Area (Hectares) *</label>
+                    {formData.farmId && (() => {
+                      const { totalFarmSize, availableCapacity } = getFarmCapacity(formData.farmId, showEditModal ? selectedCrop?.id : null);
+                      return totalFarmSize > 0 ? (
+                        <span style={{ fontSize: '11px', color: '#059669', fontWeight: '700' }}>
+                          Max: {totalFarmSize} ha (Avail: {availableCapacity.toFixed(1)} ha)
+                        </span>
+                      ) : null;
+                    })()}
+                  </div>
                   <input
                     type="number"
                     step="any"
                     required
-                    placeholder="e.g. 1250"
+                    placeholder="e.g. 150"
                     className="modal-input-control"
                     value={formData.area}
                     onChange={(e) => setFormData({ ...formData, area: e.target.value })}
                   />
+                  {formData.farmId && (() => {
+                    const { totalFarmSize, availableCapacity } = getFarmCapacity(formData.farmId, showEditModal ? selectedCrop?.id : null);
+                    const enteredArea = parseFloat(formData.area) || 0;
+                    if (totalFarmSize > 0 && enteredArea > totalFarmSize) {
+                      return (
+                        <span style={{ fontSize: '11.5px', color: '#dc2626', fontWeight: '600', marginTop: '2px' }}>
+                          ⚠️ Planted area cannot exceed total field plot size ({totalFarmSize} ha)!
+                        </span>
+                      );
+                    }
+                    if (totalFarmSize > 0 && enteredArea > availableCapacity && (formData.status === 'PLANTED' || formData.status === 'GROWING')) {
+                      return (
+                        <span style={{ fontSize: '11.5px', color: '#ea580c', fontWeight: '600', marginTop: '2px' }}>
+                          ⚠️ Exceeds remaining plot capacity ({availableCapacity.toFixed(1)} ha available).
+                        </span>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
 
                 <div className="form-field-group">

@@ -5,7 +5,7 @@ import { sendVerificationEmail } from '../utils/email.js';
 // GET ALL USERS (Admin only)
 export const getAllUsers = async (req, res) => {
     try {
-        const { search, role, status, page = 1, limit = 10 } = req.query;
+        const { search, role, status, farmId, page = 1, limit = 10 } = req.query;
         // Build filter conditions
         const where = {};
         if (search) {
@@ -21,12 +21,27 @@ export const getAllUsers = async (req, res) => {
         if (status && status !== 'all') {
             where.isActive = status === 'active';
         }
+        if (farmId && farmId !== 'all') {
+            if (farmId === 'unassigned') {
+                where.farmId = null;
+            }
+            else {
+                where.farmId = Number(farmId);
+            }
+        }
         // Get users with pagination
         const [users, total] = await Promise.all([
             prisma.user.findMany({
                 where,
                 include: {
                     role: true,
+                    farm: {
+                        select: {
+                            id: true,
+                            name: true,
+                            location: true,
+                        },
+                    },
                 },
                 skip: (Number(page) - 1) * Number(limit),
                 take: Number(limit),
@@ -61,6 +76,13 @@ export const getUserById = async (req, res) => {
             where: { id: Number(id) },
             include: {
                 role: true,
+                farm: {
+                    select: {
+                        id: true,
+                        name: true,
+                        location: true,
+                    },
+                },
             },
         });
         if (!user) {
@@ -80,7 +102,7 @@ export const getUserById = async (req, res) => {
 // ============================================
 export const createUser = async (req, res) => {
     try {
-        const { email, password, firstName, lastName, roleName, sendVerification = true } = req.body;
+        const { email, password, firstName, lastName, roleName, farmId, sendVerification = true } = req.body;
         // Check if user already exists
         const existingUser = await prisma.user.findUnique({
             where: { email },
@@ -99,7 +121,7 @@ export const createUser = async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         // Generate verification token
         const { token: verificationToken, expires: verificationTokenExpires } = generateVerificationToken();
-        // Create user
+        // Create user with optional farm assignment
         const user = await prisma.user.create({
             data: {
                 email,
@@ -107,12 +129,20 @@ export const createUser = async (req, res) => {
                 firstName,
                 lastName,
                 roleId: role.id,
+                farmId: farmId ? Number(farmId) : null,
                 isVerified: false,
                 verificationToken,
                 verificationTokenExpires,
             },
             include: {
                 role: true,
+                farm: {
+                    select: {
+                        id: true,
+                        name: true,
+                        location: true,
+                    },
+                },
             },
         });
         // Send verification email if requested
@@ -138,7 +168,7 @@ export const createUser = async (req, res) => {
 export const updateUser = async (req, res) => {
     try {
         const { id } = req.params;
-        const { firstName, lastName, roleName, isActive } = req.body;
+        const { firstName, lastName, roleName, farmId, isActive } = req.body;
         // Check if user exists
         const existingUser = await prisma.user.findUnique({
             where: { id: Number(id) },
@@ -154,6 +184,9 @@ export const updateUser = async (req, res) => {
             updateData.lastName = lastName;
         if (typeof isActive === 'boolean')
             updateData.isActive = isActive;
+        if (farmId !== undefined) {
+            updateData.farmId = farmId ? Number(farmId) : null;
+        }
         // Update role if provided
         if (roleName) {
             const role = await prisma.role.findUnique({
@@ -169,6 +202,13 @@ export const updateUser = async (req, res) => {
             data: updateData,
             include: {
                 role: true,
+                farm: {
+                    select: {
+                        id: true,
+                        name: true,
+                        location: true,
+                    },
+                },
             },
         });
         // Remove password from response
@@ -246,7 +286,12 @@ export const getUserStats = async (req, res) => {
             prisma.user.findMany({
                 take: 5,
                 orderBy: { createdAt: 'desc' },
-                include: { role: true },
+                include: {
+                    role: true,
+                    farm: {
+                        select: { id: true, name: true },
+                    },
+                },
             }),
         ]);
         // New users created in the last 30 days
@@ -280,9 +325,10 @@ export const getUserStats = async (req, res) => {
                 hour: '2-digit',
                 minute: '2-digit',
             });
+            const farmText = u.farm?.name ? ` • Assigned to ${u.farm.name}` : '';
             return {
                 id: u.id,
-                text: `User ${u.firstName} ${u.lastName} registered with role ${u.role?.name || 'User'}`,
+                text: `User ${u.firstName} ${u.lastName} registered as ${u.role?.name || 'User'}${farmText}`,
                 time: formattedTime,
                 avatar: `https://ui-avatars.com/api/?name=${encodeURIComponent(u.firstName + ' ' + u.lastName)}&background=10b981&color=fff&bold=true`,
             };
