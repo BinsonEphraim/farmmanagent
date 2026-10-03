@@ -1,0 +1,8 @@
+-- AlterTable
+ALTER TABLE "User" ADD COLUMN "farmId" INTEGER;
+
+-- AddForeignKey
+ALTER TABLE "User"
+ADD CONSTRAINT "User_farmId_fkey"
+FOREIGN KEY ("farmId") REFERENCES "Farm"("id")
+ON DELETE SET NULL ON UPDATE CASCADE;
