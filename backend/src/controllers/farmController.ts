@@ -18,19 +18,28 @@ const parseId = (val: any) => {
 
 // Helper to determine if user has administrative rights
 const checkAdmin = async (userId: number, reqUser: any) => {
-  if (reqUser?.role === 'Administrator' || reqUser?.role === 'Managing Director') return true;
+  if (['Platform Owner', 'Farm Administrator', 'Managing Director'].includes(reqUser?.role)) return true;
   const user = await prisma.user.findUnique({
     where: { id: userId },
     include: { role: true },
   });
-  return user?.role?.name === 'Administrator' || user?.role?.name === 'Managing Director';
+  return ['Platform Owner', 'Farm Administrator', 'Managing Director'].includes(user?.role?.name ?? '');
+};
+
+const getFarmScope = (userId: number, reqUser: any) => {
+  if (reqUser?.role === 'Platform Owner') return {};
+  if (['Farm Administrator', 'Managing Director'].includes(reqUser?.role)) {
+    return { organizationId: reqUser.organizationId ?? -1 };
+  }
+  return { ownerId: userId };
 };
 
 // Create Farm
 export const createFarm = async (req: Request, res: Response) => {
   try {
-    const { name, location, size, description, ownerId } = req.body;
-    const userId = (req as any).user?.userId;
+    const { name, location, size, description, ownerId, organizationId } = req.body;
+    const requestUser = (req as any).user;
+    const userId = requestUser?.userId;
 
     if (!userId) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -38,6 +47,20 @@ export const createFarm = async (req: Request, res: Response) => {
 
     const isAdmin = await checkAdmin(userId, (req as any).user);
     const assignedOwnerId = (isAdmin && ownerId) ? parseId(ownerId) : userId;
+    const assignedOrganizationId = requestUser.role === 'Platform Owner'
+      ? parseId(organizationId)
+      : requestUser.organizationId;
+
+    if (!assignedOrganizationId) {
+      return res.status(400).json({ error: 'An organization is required to create a farm' });
+    }
+    if (requestUser.role !== 'Platform Owner') {
+      const owner = await prisma.user.findFirst({
+        where: { id: assignedOwnerId, organizationId: assignedOrganizationId },
+        select: { id: true },
+      });
+      if (!owner) return res.status(400).json({ error: 'Farm owner must belong to your organization' });
+    }
 
     const farm = await db.farm.create({
       data: {
@@ -46,6 +69,7 @@ export const createFarm = async (req: Request, res: Response) => {
         size: size ? parseFloat(size) : null,
         description,
         ownerId: assignedOwnerId,
+        organizationId: assignedOrganizationId,
       },
       include: {
         owner: {
@@ -74,8 +98,7 @@ export const getAllFarms = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const where: any = isAdmin ? {} : { ownerId: userId };
+    const where: any = getFarmScope(userId, (req as any).user);
 
     if (search) {
       where.OR = [
@@ -128,11 +151,7 @@ export const getFarmById = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.ownerId = userId;
-    }
+    const whereCondition: any = { id: parseId(id), ...getFarmScope(userId, (req as any).user) };
 
     const farm = await db.farm.findFirst({
       where: whereCondition,
@@ -187,11 +206,9 @@ export const updateFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.ownerId = userId;
-    }
+    const requestUser = (req as any).user;
+    const isAdmin = await checkAdmin(userId, requestUser);
+    const whereCondition: any = { id: parseId(id), ...getFarmScope(userId, requestUser) };
 
     const existingFarm = await db.farm.findFirst({
       where: whereCondition,
@@ -209,6 +226,13 @@ export const updateFarm = async (req: Request, res: Response) => {
     };
 
     if (isAdmin && ownerId) {
+      if (requestUser.role !== 'Platform Owner') {
+        const owner = await prisma.user.findFirst({
+          where: { id: parseId(ownerId), organizationId: requestUser.organizationId },
+          select: { id: true },
+        });
+        if (!owner) return res.status(400).json({ error: 'Farm owner must belong to your organization' });
+      }
       updateData.ownerId = parseId(ownerId);
     }
 
@@ -242,11 +266,7 @@ export const deleteFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.ownerId = userId;
-    }
+    const whereCondition: any = { id: parseId(id), ...getFarmScope(userId, (req as any).user) };
 
     const existingFarm = await db.farm.findFirst({
       where: whereCondition,
@@ -279,15 +299,16 @@ export const getFarmStats = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const where: any = isAdmin ? {} : { ownerId: userId };
+    const requestUser = (req as any).user;
+    const farmScope = getFarmScope(userId, requestUser);
+    const where: any = farmScope;
 
     const [totalFarms, totalCrops, totalAnimals, totalRevenueData, allFarms] = await Promise.all([
       db.farm.count({ where }),
-      db.crop.count({ where: isAdmin ? {} : { farm: { ownerId: userId } } }),
-      db.animal.count({ where: isAdmin ? {} : { farm: { ownerId: userId } } }),
+      db.crop.count({ where: { farm: farmScope } }),
+      db.animal.count({ where: { farm: farmScope } }),
       db.revenue.aggregate({
-        where: isAdmin ? {} : { farm: { ownerId: userId } },
+        where: { farm: farmScope },
         _sum: { amount: true },
       }),
       db.farm.findMany({
@@ -327,7 +348,7 @@ export const getFarmStats = async (req: Request, res: Response) => {
 
     // Aggregate real monthly revenues from database
     const allRevenues = await db.revenue.findMany({
-      where: isAdmin ? {} : { farm: { ownerId: userId } },
+      where: { farm: farmScope },
       select: { amount: true, date: true },
     });
 
@@ -389,8 +410,7 @@ export const getAllCrops = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const where: any = isAdmin ? {} : { farm: { ownerId: userId } };
+    const where: any = { farm: getFarmScope(userId, (req as any).user) };
 
     if (farmId && farmId !== 'All Farms' && farmId !== 'all') {
       where.farmId = parseId(farmId);
@@ -439,11 +459,8 @@ export const getCropById = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const crop = await db.crop.findFirst({
       where: whereCondition,
@@ -478,9 +495,9 @@ export const getCropStats = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const farmWhere: any = isAdmin ? {} : { ownerId: userId };
-    const cropWhere: any = isAdmin ? {} : { farm: { ownerId: userId } };
+    const farmScope = getFarmScope(userId, (req as any).user);
+    const farmWhere: any = farmScope;
+    const cropWhere: any = { farm: farmScope };
 
     const [allCrops, allFarms, totalRevenuesData] = await Promise.all([
       db.crop.findMany({
@@ -497,7 +514,7 @@ export const getCropStats = async (req: Request, res: Response) => {
         select: { id: true, size: true, name: true },
       }),
       db.revenue.aggregate({
-        where: isAdmin ? {} : { farm: { ownerId: userId } },
+        where: { farm: farmScope },
         _sum: { amount: true },
       }),
     ]);
@@ -646,11 +663,7 @@ export const createCrop = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const farmWhereCondition: any = { id: parseId(farmId) };
-    if (!isAdmin) {
-      farmWhereCondition.ownerId = userId;
-    }
+    const farmWhereCondition: any = { id: parseId(farmId), ...getFarmScope(userId, (req as any).user) };
 
     const farm = await db.farm.findFirst({
       where: farmWhereCondition,
@@ -725,11 +738,8 @@ export const getCropsByFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { farmId: parseId(farmId) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const crops = await db.crop.findMany({
       where: whereCondition,
@@ -759,11 +769,8 @@ export const updateCrop = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const crop = await db.crop.findFirst({
       where: whereCondition,
@@ -774,8 +781,8 @@ export const updateCrop = async (req: Request, res: Response) => {
     }
 
     const targetFarmId = farmId ? parseId(farmId) : crop.farmId;
-    const farm = await db.farm.findUnique({
-      where: { id: targetFarmId },
+    const farm = await db.farm.findFirst({
+      where: { id: targetFarmId, ...getFarmScope(userId, (req as any).user) },
       include: {
         crops: {
           where: {
@@ -851,11 +858,8 @@ export const deleteCrop = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const crop = await db.crop.findFirst({
       where: whereCondition,
@@ -891,10 +895,7 @@ export const createInventory = async (req: Request, res: Response) => {
     }
 
     const farm = await db.farm.findFirst({
-      where: {
-        id: parseId(farmId),
-        ...(await checkAdmin(userId, (req as any).user)) ? {} : { ownerId: userId },
-      },
+      where: { id: parseId(farmId), ...getFarmScope(userId, (req as any).user) },
     });
 
     if (!farm) {
@@ -936,11 +937,8 @@ export const getInventoryByFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { farmId: parseId(farmId) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const inventory = await db.inventory.findMany({
       where: whereCondition,
@@ -968,11 +966,7 @@ export const createAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
-    const farmWhereCondition: any = { id: parseId(farmId) };
-    if (!isAdmin) {
-      farmWhereCondition.ownerId = userId;
-    }
+    const farmWhereCondition: any = { id: parseId(farmId), ...getFarmScope(userId, (req as any).user) };
 
     // Verify farm belongs to user or user is admin
     const farm = await db.farm.findFirst({
@@ -1014,11 +1008,8 @@ export const getAnimalsByFarm = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { farmId: parseId(farmId) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const animals = await db.animal.findMany({
       where: whereCondition,
@@ -1043,11 +1034,8 @@ export const updateAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const animal = await db.animal.findFirst({
       where: whereCondition,
@@ -1088,11 +1076,8 @@ export const deleteAnimal = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const isAdmin = await checkAdmin(userId, (req as any).user);
     const whereCondition: any = { id: parseId(id) };
-    if (!isAdmin) {
-      whereCondition.farm = { ownerId: userId };
-    }
+    whereCondition.farm = getFarmScope(userId, (req as any).user);
 
     const animal = await db.animal.findFirst({
       where: whereCondition,
@@ -1140,6 +1125,7 @@ const generateNextAssetCode = async (): Promise<string> => {
 // Get All Assets with Filtering, Search & Pagination
 export const getAllAssets = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
     const {
       search,
       category,
@@ -1157,7 +1143,7 @@ export const getAllAssets = async (req: Request, res: Response) => {
     const limitNum = Math.max(1, Math.min(100, parseInt(String(limit), 10) || 10));
     const skip = (pageNum - 1) * limitNum;
 
-    const where: any = {};
+    const where: any = { farm: getFarmScope(requestUser.userId, requestUser) };
 
     // Search by name, code, manufacturer, model, location
     if (search && String(search).trim() !== '') {
@@ -1242,7 +1228,9 @@ export const getAllAssets = async (req: Request, res: Response) => {
 // Get Comprehensive Asset Statistics & Dashboard Metrics
 export const getAssetStats = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
     const assets = await db.asset.findMany({
+      where: { farm: getFarmScope(requestUser.userId, requestUser) },
       include: {
         farm: {
           select: { id: true, name: true, location: true },
@@ -1490,13 +1478,14 @@ export const getAssetById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const assetId = parseId(id);
+    const requestUser = (req as any).user;
 
     if (Number.isNaN(assetId)) {
       return res.status(400).json({ error: 'Invalid asset ID' });
     }
 
-    const asset = await db.asset.findUnique({
-      where: { id: assetId },
+    const asset = await db.asset.findFirst({
+      where: { id: assetId, farm: getFarmScope(requestUser.userId, requestUser) },
       include: {
         farm: {
           select: { id: true, name: true, location: true, ownerId: true },
@@ -1521,6 +1510,7 @@ export const getAssetById = async (req: Request, res: Response) => {
 // Create New Asset
 export const createAsset = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
     const {
       assetCode,
       name,
@@ -1556,11 +1546,15 @@ export const createAsset = async (req: Request, res: Response) => {
       : pPrice;
 
     const farmIdNum = parseId(farmId);
+    const farm = await db.farm.findFirst({
+      where: { id: farmIdNum, ...getFarmScope(requestUser.userId, requestUser) },
+      select: { id: true, name: true },
+    });
+    if (!farm) return res.status(404).json({ error: 'Farm not found or unauthorized' });
 
     // Get farm for location default if location is not provided
     let finalLocation = location;
     if (!finalLocation || finalLocation.trim() === '') {
-      const farm = await db.farm.findUnique({ where: { id: farmIdNum }, select: { name: true } });
       finalLocation = farm?.name || 'Main Farm';
     }
 
@@ -1612,6 +1606,7 @@ export const updateAsset = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const assetId = parseId(id);
+    const requestUser = (req as any).user;
 
     if (Number.isNaN(assetId)) {
       return res.status(400).json({ error: 'Invalid asset ID' });
@@ -1640,9 +1635,19 @@ export const updateAsset = async (req: Request, res: Response) => {
       depreciationRate,
     } = req.body;
 
-    const existingAsset = await db.asset.findUnique({ where: { id: assetId } });
+    const existingAsset = await db.asset.findFirst({
+      where: { id: assetId, farm: getFarmScope(requestUser.userId, requestUser) },
+    });
     if (!existingAsset) {
       return res.status(404).json({ error: 'Asset not found' });
+    }
+
+    if (farmId !== undefined) {
+      const farm = await db.farm.findFirst({
+        where: { id: parseId(farmId), ...getFarmScope(requestUser.userId, requestUser) },
+        select: { id: true },
+      });
+      if (!farm) return res.status(400).json({ error: 'Farm does not belong to your organization' });
     }
 
     const updatedAsset = await db.asset.update({
@@ -1695,12 +1700,15 @@ export const deleteAsset = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const assetId = parseId(id);
+    const requestUser = (req as any).user;
 
     if (Number.isNaN(assetId)) {
       return res.status(400).json({ error: 'Invalid asset ID' });
     }
 
-    const existingAsset = await db.asset.findUnique({ where: { id: assetId } });
+    const existingAsset = await db.asset.findFirst({
+      where: { id: assetId, farm: getFarmScope(requestUser.userId, requestUser) },
+    });
     if (!existingAsset) {
       return res.status(404).json({ error: 'Asset not found' });
     }
@@ -1719,6 +1727,7 @@ export const createAssetMaintenance = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const assetId = parseId(id);
+    const requestUser = (req as any).user;
 
     if (Number.isNaN(assetId)) {
       return res.status(400).json({ error: 'Invalid asset ID' });
@@ -1739,6 +1748,12 @@ export const createAssetMaintenance = async (req: Request, res: Response) => {
     if (!title || !scheduledDate) {
       return res.status(400).json({ error: 'Maintenance title and scheduled date are required' });
     }
+
+    const asset = await db.asset.findFirst({
+      where: { id: assetId, farm: getFarmScope(requestUser.userId, requestUser) },
+      select: { id: true },
+    });
+    if (!asset) return res.status(404).json({ error: 'Asset not found' });
 
     const maintenance = await db.assetMaintenance.create({
       data: {
@@ -1784,7 +1799,9 @@ export const createAssetMaintenance = async (req: Request, res: Response) => {
 // Get All Maintenance Logs
 export const getAllMaintenanceLogs = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
     const logs = await db.assetMaintenance.findMany({
+      where: { asset: { farm: getFarmScope(requestUser.userId, requestUser) } },
       include: {
         asset: {
           select: { id: true, name: true, assetCode: true, category: true, imageUrl: true, farmId: true },

@@ -8,6 +8,9 @@ import LogoutButton from '../common/LogoutButton';
 const AdminDashboard = () => {
   const { user: authUser } = useAuth();
   const navigate = useNavigate();
+  const adminName = authUser?.firstName
+    ? `${authUser.firstName} ${authUser.lastName || ''}`.trim()
+    : 'Farm Administrator';
 
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -35,7 +38,7 @@ const AdminDashboard = () => {
   }, []);
 
   const rolesList = [
-    { name: 'System Administrator', users: 1, permissions: 'Full System Superuser & Configuration' },
+    { name: 'Farm Administrator', users: 1, permissions: 'Customer organization users, farms, roles, and settings' },
     { name: 'Managing Director', users: 1, permissions: 'Executive Oversight, Strategic Goals, Approvals' },
     { name: 'Finance Manager', users: 1, permissions: 'Ledgers, Invoices, Payroll, Budgets, Statements' },
     { name: 'Human Resources Manager', users: 1, permissions: 'Employees, Attendance, Leave Approvals, Training' },
@@ -76,11 +79,6 @@ const AdminDashboard = () => {
             <span className="admin-nav-icon">👥</span>
             {sidebarOpen && <span>Users & Roles</span>}
           </Link>
-          <Link to="/settings" className="admin-nav-link">
-            <span className="admin-nav-icon">⚙️</span>
-            {sidebarOpen && <span>System Settings</span>}
-          </Link>
-
           <div className="admin-nav-section">ALL MODULES (SUPERUSER)</div>
           <Link to="/md-dashboard" className="admin-nav-link">
             <span className="admin-nav-icon">📈</span>
@@ -108,13 +106,13 @@ const AdminDashboard = () => {
         {sidebarOpen && (
           <div className="admin-bottom-profile">
             <img
-              src={`https://ui-avatars.com/api/?name=System+Administrator&background=10b981&color=fff&bold=true`}
-              alt="Admin"
+              src={`https://ui-avatars.com/api/?name=${encodeURIComponent(adminName)}&background=10b981&color=fff&bold=true`}
+              alt="Farm Administrator"
               className="admin-avatar"
             />
             <div className="admin-profile-meta">
-              <span className="admin-name">System Administrator</span>
-              <span className="admin-role">Superuser</span>
+              <span className="admin-name">{adminName}</span>
+              <span className="admin-role">{authUser?.role || 'Farm Administrator'}</span>
               <span className="admin-status-pill">
                 <span className="admin-status-dot"></span> Active
               </span>
@@ -137,8 +135,8 @@ const AdminDashboard = () => {
               </svg>
             </button>
             <div className="admin-topbar-titles">
-              <h1 className="admin-heading">System Administrator Console</h1>
-              <p className="admin-subheading">User provisioning, 7 official system roles, security logs, and database status.</p>
+              <h1 className="admin-heading">Farm Administrator Console</h1>
+              <p className="admin-subheading">Manage your organization’s users, roles, and farms.</p>
             </div>
           </div>
 

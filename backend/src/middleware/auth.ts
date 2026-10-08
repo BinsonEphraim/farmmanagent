@@ -19,17 +19,24 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
-      include: { role: true },
+      include: {
+        role: true,
+        organization: { select: { status: true } },
+      },
     });
 
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'User account is inactive or does not exist' });
+    }
+    if (user.organization && user.organization.status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'This customer organization is suspended' });
     }
 
     (req as any).user = {
       userId: user.id,
       email: user.email,
       role: user.role.name,
+      organizationId: user.organizationId,
       firstName: user.firstName,
       lastName: user.lastName,
     };
@@ -43,8 +50,7 @@ export const authenticate = async (req: Request, res: Response, next: NextFuncti
 export const authorizeRole = (allowedRoles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const userRole = (req as any).user?.role;
-    // Administrator has global bypass, or userRole must be in allowedRoles
-    if (!userRole || (!allowedRoles.includes(userRole) && userRole !== 'Administrator')) {
+    if (!userRole || !allowedRoles.includes(userRole)) {
       return res.status(403).json({
         error: `Forbidden: Access restricted to [${allowedRoles.join(', ')}]. Your role is '${userRole || 'Unknown'}'`,
       });

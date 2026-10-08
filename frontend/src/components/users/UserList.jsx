@@ -8,8 +8,7 @@ import './UserList.css';
 import LogoutButton from '../common/LogoutButton';
 
 const DEFAULT_SYSTEM_ROLES = [
-  'System Administrator',
-  'Administrator',
+  'Farm Administrator',
   'Managing Director',
   'Finance Manager',
   'Human Resources Manager',

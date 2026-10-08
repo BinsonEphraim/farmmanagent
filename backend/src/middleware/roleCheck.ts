@@ -21,8 +21,7 @@ export const isAdmin = async (req: Request, res: Response, next: NextFunction) =
       return res.status(401).json({ error: 'User not found' });
     }
 
-    // Both names exist in the database for compatibility with older seeded data.
-    if (!['Administrator', 'System Administrator'].includes(user.role.name)) {
+    if (user.role.name !== 'Farm Administrator') {
       return res.status(403).json({ error: 'Admin access required' });
     }
 

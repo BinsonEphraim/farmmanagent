@@ -10,6 +10,7 @@ import mdRoutes from './routes/mdRoutes.js';
 import employeeRoutes from './routes/employeeRoutes.js';
 import hrRoutes from './routes/hrRoutes.js';
 import storekeeperRoutes from './routes/storekeeperRoutes.js';
+import platformRoutes from './routes/platformRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -18,7 +19,17 @@ const FRONTEND_ORIGIN = process.env.CORS_ORIGIN || process.env.FRONTEND_URL || '
 // Middleware
 app.use(helmet());
 app.use(cors({
-  origin: FRONTEND_ORIGIN,
+  origin: (origin, callback) => {
+    const isLocalDevelopmentOrigin = process.env.NODE_ENV !== 'production'
+      && /^https?:\/\/(localhost|127\.0\.0\.1):\d+$/.test(origin || '');
+
+    if (!origin || origin === FRONTEND_ORIGIN || isLocalDevelopmentOrigin) {
+      callback(null, true);
+      return;
+    }
+
+    callback(new Error('Origin is not allowed by CORS'));
+  },
   credentials: true
 }));
 app.use(express.json());
@@ -33,6 +44,7 @@ app.use('/api/md', mdRoutes);
 app.use('/api/employee', employeeRoutes);
 app.use('/api/hr', hrRoutes);
 app.use('/api/storekeeper', storekeeperRoutes);
+app.use('/api/platform', platformRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

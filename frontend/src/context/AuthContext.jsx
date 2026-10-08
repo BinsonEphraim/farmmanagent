@@ -11,14 +11,34 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    // Check if user is already logged in
-    const token = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-    
-    if (token && savedUser) {
-      setUser(JSON.parse(savedUser));
-    }
-    setLoading(false);
+    const restoreSession = async () => {
+      const token = localStorage.getItem('token');
+      const savedUser = localStorage.getItem('user');
+
+      if (!token || !savedUser) {
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const cachedUser = JSON.parse(savedUser);
+        const profile = await authService.getProfile();
+        const currentUser = {
+          ...cachedUser,
+          ...profile,
+          role: profile.role?.name || cachedUser.role,
+        };
+        localStorage.setItem('user', JSON.stringify(currentUser));
+        setUser(currentUser);
+      } catch {
+        authService.logout();
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    restoreSession();
   }, []);
 
   // Login with remember me

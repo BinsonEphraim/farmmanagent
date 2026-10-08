@@ -12,6 +12,7 @@ const authUserSelect = {
   firstName: true,
   lastName: true,
   roleId: true,
+  organizationId: true,
   farmId: true,
   isVerified: true,
   verificationToken: true,
@@ -29,6 +30,9 @@ const authUserSelect = {
       updatedAt: true
     }
   },
+  organization: {
+    select: { status: true }
+  },
   farm: {
     select: {
       id: true,
@@ -43,6 +47,7 @@ const profileUserSelect = {
   email: true,
   firstName: true,
   lastName: true,
+  organizationId: true,
   farmId: true,
   isVerified: true,
   role: {
@@ -125,6 +130,7 @@ export const register = async (req: Request, res: Response) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role.name,
+        organizationId: user.organizationId,
         farmId: user.farmId,
         farm: user.farm,
         isVerified: user.isVerified
@@ -168,6 +174,10 @@ export const login = async (req: Request, res: Response) => {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
 
+    if ((user as any).organization && (user as any).organization.status !== 'ACTIVE') {
+      return res.status(403).json({ error: 'This customer organization is suspended' });
+    }
+
     // Update last login
     await prisma.user.update({
       where: { id: user.id },
@@ -186,6 +196,7 @@ export const login = async (req: Request, res: Response) => {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role.name,
+        organizationId: user.organizationId,
         farmId: user.farmId,
         farm: user.farm,
         isVerified: user.isVerified
@@ -398,6 +409,7 @@ export const updateProfile = async (req: Request, res: Response) => {
         firstName: updatedUser.firstName,
         lastName: updatedUser.lastName,
         role: updatedUser.role.name,
+        organizationId: updatedUser.organizationId,
         farmId: updatedUser.farmId,
         farm: updatedUser.farm,
         isVerified: updatedUser.isVerified

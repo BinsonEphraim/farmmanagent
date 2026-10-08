@@ -7,14 +7,20 @@ import HrDashboard from './HrDashboard';
 import FarmManagerDashboard from './FarmManagerDashboard';
 import StorekeeperDashboard from './StorekeeperDashboard';
 import EmployeeDashboard from './EmployeeDashboard';
+import PlatformOwnerDashboard from './PlatformOwnerDashboard';
 
 const RoleDashboardRouter = () => {
   const { user } = useAuth();
   const role = user?.role || 'Employee/Staff';
 
-  // 1. System Administrator
-  if (role === 'System Administrator' || role === 'Administrator') {
+  // Organization administrator
+  if (role === 'Farm Administrator') {
     return <AdminDashboard />;
+  }
+
+  // Platform Owner dashboard is introduced separately from customer administration.
+  if (role === 'Platform Owner') {
+    return <PlatformOwnerDashboard />;
   }
 
   // 2. Managing Director

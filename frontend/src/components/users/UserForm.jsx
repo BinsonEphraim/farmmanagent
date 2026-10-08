@@ -9,7 +9,6 @@ const UserForm = ({ user, roles, farms = [], onSuccess, onCancel }) => {
     lastName: '',
     roleName: 'Employee',
     farmId: '',
-    sendVerification: true,
   });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -24,7 +23,6 @@ const UserForm = ({ user, roles, farms = [], onSuccess, onCancel }) => {
         roleName: user.role?.name || 'Employee',
         farmId: user.farmId || user.farm?.id || '',
         password: '',
-        sendVerification: false,
       });
     }
   }, [user]);
@@ -135,19 +133,6 @@ const UserForm = ({ user, roles, farms = [], onSuccess, onCancel }) => {
               />
             </div>
 
-            <div style={formStyles.checkboxGroup}>
-              <input
-                type="checkbox"
-                name="sendVerification"
-                checked={formData.sendVerification}
-                onChange={handleChange}
-                id="sendVerification"
-                style={formStyles.checkbox}
-              />
-              <label htmlFor="sendVerification" style={{ fontSize: '13px', color: '#475569', cursor: 'pointer' }}>
-                Send email verification & credentials to user
-              </label>
-            </div>
           </>
         )}
 

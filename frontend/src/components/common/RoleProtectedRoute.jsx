@@ -15,16 +15,15 @@ export const RoleProtectedRoute = ({ children, allowedRoles }) => {
 
   const userRole = user.role || 'Employee/Staff';
 
-  // System Administrator has global bypass
-  if (userRole === 'System Administrator' || userRole === 'Administrator') {
+  // Platform Owner has global access; customer administrators must be allowed explicitly.
+  if (userRole === 'Platform Owner') {
     return children;
   }
 
   // Check if role or normalized role is allowed
   const isAllowed = allowedRoles?.some((r) => {
     if (r === userRole) return true;
-    if (r === 'Administrator' && userRole === 'System Administrator') return true;
-    if (r === 'System Administrator' && userRole === 'Administrator') return true;
+    if (r === 'Administrator' && userRole === 'Farm Administrator') return true;
     if (r === 'HR Manager' && userRole === 'Human Resources Manager') return true;
     if (r === 'Human Resources Manager' && userRole === 'HR Manager') return true;
     if (r === 'Employee' && userRole === 'Employee/Staff') return true;

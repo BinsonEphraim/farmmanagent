@@ -13,10 +13,12 @@ model User {
   firstName String
   lastName  String
   roleId    Int
+  organizationId Int?
   farmId    Int?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   role      Role     @relation(fields: [roleId], references: [id])
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   farm      Farm?    @relation("FarmWorkers", fields: [farmId], references: [id], onDelete: SetNull)
   
   isVerified            Boolean  @default(false)
@@ -38,10 +40,97 @@ model User {
 model Role {
   id          Int      @id @default(autoincrement())
   name        String   @unique
+  organizationId Int?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   description String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   users       User[]
+  permissions RolePermission[]
+
+  @@unique([organizationId, name])
+}
+
+model Organization {
+  id          Int      @id @default(autoincrement())
+  name        String
+  slug        String   @unique
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  users       User[]
+  roles       Role[]
+  farms       Farm[]
+  subscriptions Subscription[]
+  supportTickets SupportTicket[]
+  trainingPrograms TrainingProgram[]
+}
+
+model Plan {
+  id           Int      @id @default(autoincrement())
+  name         String
+  code         String   @unique
+  description  String?
+  monthlyPrice Float    @default(0)
+  maxFarms     Int?
+  maxUsers     Int?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  subscriptions Subscription[]
+}
+
+model Subscription {
+  id               Int      @id @default(autoincrement())
+  organizationId   Int
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  planId           Int
+  plan             Plan     @relation(fields: [planId], references: [id], onDelete: Restrict)
+  status           String   @default("TRIALING")
+  startsAt         DateTime @default(now())
+  trialEndsAt      DateTime?
+  currentPeriodEnd DateTime?
+  canceledAt       DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([organizationId, status])
+}
+
+model SupportTicket {
+  id             Int      @id @default(autoincrement())
+  organizationId Int
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  subject        String
+  description    String
+  status         String   @default("OPEN")
+  priority       String   @default("NORMAL")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([organizationId, status])
+}
+
+model PlatformSetting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
+}
+
+model Permission {
+  id          Int      @id @default(autoincrement())
+  key         String   @unique
+  description String?
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId       Int
+  permissionId Int
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
 }
 
 model AttendanceLog {
@@ -67,6 +156,8 @@ model TrainingProgram {
   scheduledDate DateTime
   status       String   @default("UPCOMING")
   description  String?
+  organizationId Int?
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   enrollments  TrainingEnrollment[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -114,7 +205,9 @@ model Farm {
   size        Float?   // Size in hectares
   description String?
   ownerId     Int
+  organizationId Int
   owner       User     @relation("FarmOwner", fields: [ownerId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   assignedUsers User[] @relation("FarmWorkers")
   
   crops       Crop[]
@@ -131,6 +224,8 @@ model Farm {
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  @@index([organizationId])
 }
 
 model Asset {

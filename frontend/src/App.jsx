@@ -21,6 +21,7 @@ import FinanceOverview from './components/finance/FinanceOverview';
 import MdDashboard from './components/dashboard/MdDashboard';
 import RoleDashboardRouter from './components/dashboard/RoleDashboardRouter';
 import RoleProtectedRoute from './components/common/RoleProtectedRoute';
+import PlatformOwnerDashboard from './components/dashboard/PlatformOwnerDashboard';
 
 // Protected route component
 const ProtectedRoute = ({ children }) => {
@@ -43,7 +44,7 @@ const ProtectedAdminRoute = ({ children }) => {
 
   if (loading) return <div>Loading...</div>;
   if (!isAuthenticated || !user) return <Navigate to="/login" />;
-  if (!['Administrator', 'System Administrator'].includes(user.role)) return <Navigate to="/dashboard" />;
+  if (!['Farm Administrator', 'Platform Owner'].includes(user.role)) return <Navigate to="/dashboard" />;
 
   return children;
 };
@@ -67,9 +68,17 @@ function AppRoutes() {
         }
       />
       <Route
+        path="/platform"
+        element={
+          <RoleProtectedRoute allowedRoles={['Platform Owner']}>
+            <PlatformOwnerDashboard />
+          </RoleProtectedRoute>
+        }
+      />
+      <Route
         path="/md-dashboard"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director']}>
             <MdDashboard />
           </RoleProtectedRoute>
         }
@@ -85,7 +94,7 @@ function AppRoutes() {
       <Route
         path="/crops"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <CropList />
           </RoleProtectedRoute>
         }
@@ -93,7 +102,7 @@ function AppRoutes() {
       <Route
         path="/calendar"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <CropList defaultTab="calendar" />
           </RoleProtectedRoute>
         }
@@ -117,7 +126,7 @@ function AppRoutes() {
       <Route
         path="/animals"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <LivestockOverview />
           </RoleProtectedRoute>
         }
@@ -125,7 +134,7 @@ function AppRoutes() {
       <Route
         path="/inventory"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <InventoryOverview />
           </RoleProtectedRoute>
         }
@@ -133,7 +142,7 @@ function AppRoutes() {
       <Route
         path="/equipment"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <AssetList />
           </RoleProtectedRoute>
         }
@@ -141,7 +150,7 @@ function AppRoutes() {
       <Route
         path="/assets"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <AssetList />
           </RoleProtectedRoute>
         }
@@ -149,7 +158,7 @@ function AppRoutes() {
       <Route
         path="/finance"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Finance Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Finance Manager']}>
             <FinanceOverview />
           </RoleProtectedRoute>
         }
@@ -157,7 +166,7 @@ function AppRoutes() {
       <Route
         path="/invoices"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Finance Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Finance Manager']}>
             <FinanceOverview />
           </RoleProtectedRoute>
         }
@@ -165,7 +174,7 @@ function AppRoutes() {
       <Route
         path="/payments"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Finance Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Finance Manager']}>
             <FinanceOverview />
           </RoleProtectedRoute>
         }
@@ -173,7 +182,7 @@ function AppRoutes() {
       <Route
         path="/budgets"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Finance Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Finance Manager']}>
             <FinanceOverview />
           </RoleProtectedRoute>
         }
@@ -181,7 +190,7 @@ function AppRoutes() {
       <Route
         path="/payroll"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Finance Manager', 'Human Resources Manager', 'HR Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Finance Manager', 'Human Resources Manager', 'HR Manager']}>
             <FinanceOverview />
           </RoleProtectedRoute>
         }
@@ -191,7 +200,7 @@ function AppRoutes() {
       <Route
         path="/users"
         element={
-            <RoleProtectedRoute allowedRoles={['Administrator', 'System Administrator']}>
+            <RoleProtectedRoute allowedRoles={['Farm Administrator']}>
             <UserList />
           </RoleProtectedRoute>
         }
@@ -201,7 +210,7 @@ function AppRoutes() {
       <Route
         path="/farms"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <FarmList />
           </RoleProtectedRoute>
         }
@@ -209,7 +218,7 @@ function AppRoutes() {
       <Route
         path="/farms/new"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <FarmForm />
           </RoleProtectedRoute>
         }
@@ -217,7 +226,7 @@ function AppRoutes() {
       <Route
         path="/farms/:id"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <FarmDetail />
           </RoleProtectedRoute>
         }
@@ -225,7 +234,7 @@ function AppRoutes() {
       <Route
         path="/farms/:id/edit"
         element={
-          <RoleProtectedRoute allowedRoles={['Administrator', 'Managing Director', 'Farm Manager']}>
+          <RoleProtectedRoute allowedRoles={['Farm Administrator', 'Managing Director', 'Farm Manager']}>
             <FarmForm />
           </RoleProtectedRoute>
         }
@@ -237,6 +246,7 @@ function AppRoutes() {
 const AppContent = () => {
   const location = useLocation();
   const hideNavbar = location.pathname.startsWith('/dashboard') || 
+                      location.pathname.startsWith('/platform') ||
                       location.pathname.startsWith('/users') ||
                       location.pathname.startsWith('/farms') ||
                       location.pathname.startsWith('/crops') ||

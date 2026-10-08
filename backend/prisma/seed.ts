@@ -32,9 +32,41 @@ const prisma = new PrismaClient({ adapter });
 async function main() {
   console.log('🌱 Starting comprehensive database seed...');
 
+  const organization = await prisma.organization.upsert({
+    where: { slug: 'legacy-organization' },
+    update: {},
+    create: { name: 'Legacy Organization', slug: 'legacy-organization' },
+  });
+  const starterPlan = await prisma.plan.upsert({
+    where: { code: 'STARTER' },
+    update: {},
+    create: {
+      name: 'Starter',
+      code: 'STARTER',
+      description: 'Starter plan for small farm organizations',
+      monthlyPrice: 0,
+      maxFarms: 5,
+      maxUsers: 25,
+    },
+  });
+  const existingSubscription = await prisma.subscription.findFirst({
+    where: { organizationId: organization.id },
+  });
+  if (!existingSubscription) {
+    await prisma.subscription.create({
+      data: {
+        organizationId: organization.id,
+        planId: starterPlan.id,
+        status: 'TRIALING',
+        trialEndsAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+      },
+    });
+  }
+
   // 1. Seed 7 Official Roles
   const rolesData = [
-    { name: 'System Administrator', description: 'Manages users, roles, permissions, system settings, and overall system administration' },
+    { name: 'Platform Owner', description: 'Manages SaaS customers, plans, subscriptions, support, and platform health' },
+    { name: 'Farm Administrator', description: 'Manages users, farms, roles, permissions, and settings within a customer organization' },
     { name: 'Managing Director', description: 'Company-wide monitoring, approvals, oversight, and decision-making' },
     { name: 'Finance Manager', description: 'Income, expenses, budgets, payroll, cash flow, and financial reports' },
     { name: 'Human Resources Manager', description: 'Employees, attendance, leave, payroll, performance, training, and staff records' },
@@ -42,7 +74,7 @@ async function main() {
     { name: 'Storekeeper', description: 'Inventory, stock levels, fertilizer, seeds, chemicals, and stock movements' },
     { name: 'Employee/Staff', description: 'Assigned work, farm/operational activities, and information permitted by their role' },
     // Aliases for compatibility
-    { name: 'Administrator', description: 'Alias for System Administrator' },
+    { name: 'Administrator', description: 'Legacy alias for Farm Administrator' },
     { name: 'HR Manager', description: 'Alias for Human Resources Manager' },
     { name: 'Employee', description: 'Alias for Employee/Staff' },
   ];
@@ -62,10 +94,16 @@ async function main() {
   // 2. Seed 7 Official Role Accounts for Instant Testing & Real Usage
   const coreUsers = [
     {
-      email: 'admin@ufms.com',
+      email: 'systemadmin@ufms.com',
       firstName: 'System',
       lastName: 'Administrator',
-      roleName: 'System Administrator',
+      roleName: 'Platform Owner',
+    },
+    {
+      email: 'admin@ufms.com',
+      firstName: 'Farm',
+      lastName: 'Administrator',
+      roleName: 'Farm Administrator',
     },
     {
       email: 'md@ufms.com',
@@ -113,6 +151,7 @@ async function main() {
         roleId: roles[u.roleName].id,
         firstName: u.firstName,
         lastName: u.lastName,
+        organizationId: u.roleName === 'Platform Owner' ? null : organization.id,
         isVerified: true,
         isActive: true,
       },
@@ -122,6 +161,7 @@ async function main() {
         firstName: u.firstName,
         lastName: u.lastName,
         roleId: roles[u.roleName].id,
+        organizationId: u.roleName === 'Platform Owner' ? null : organization.id,
         isVerified: true,
         isActive: true,
       },
@@ -140,13 +180,14 @@ async function main() {
   for (const m of managersData) {
     const user = await prisma.user.upsert({
       where: { email: m.email },
-      update: {},
+      update: { organizationId: organization.id },
       create: {
         email: m.email,
         password: hashedPassword,
         firstName: m.firstName,
         lastName: m.lastName,
         roleId: roles['Farm Manager'].id,
+        organizationId: organization.id,
         isVerified: true,
         isActive: true,
       },
@@ -344,11 +385,11 @@ async function main() {
       farmId = existing.id;
       await prisma.farm.update({
         where: { id: farmId },
-        data: farmData,
+        data: { ...farmData, organizationId: organization.id },
       });
     } else {
       const created = await prisma.farm.create({
-        data: farmData,
+        data: { ...farmData, organizationId: organization.id },
       });
       farmId = created.id;
     }

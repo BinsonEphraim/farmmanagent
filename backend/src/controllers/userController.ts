@@ -1,16 +1,17 @@
 import { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import prisma from '../utils/prisma.js';
-import { generateVerificationToken } from '../utils/jwt.js';
-import { sendVerificationEmail } from '../utils/email.js';
 
 // GET ALL USERS (Admin only)
 export const getAllUsers = async (req: Request, res: Response) => {
   try {
     const { search, role, status, farmId, page = 1, limit = 10 } = req.query;
+    const requestUser = (req as any).user;
 
     // Build filter conditions
-    const where: any = {};
+    const where: any = requestUser?.role === 'Platform Owner'
+      ? {}
+      : { organizationId: requestUser?.organizationId };
 
     if (search) {
       where.OR = [
@@ -81,9 +82,13 @@ export const getAllUsers = async (req: Request, res: Response) => {
 export const getUserById = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const requestUser = (req as any).user;
 
     const user = await prisma.user.findUnique({
-      where: { id: Number(id) },
+      where: {
+        id: Number(id),
+        ...(requestUser?.role === 'Platform Owner' ? {} : { organizationId: requestUser?.organizationId }),
+      },
       include: {
         role: true,
         farm: {
@@ -115,7 +120,15 @@ export const getUserById = async (req: Request, res: Response) => {
 // ============================================
 export const createUser = async (req: Request, res: Response) => {
   try {
-    const { email, password, firstName, lastName, roleName, farmId, sendVerification = true } = req.body;
+    const { email, password, firstName, lastName, roleName, farmId } = req.body;
+    const requestUser = (req as any).user;
+
+    if (requestUser?.role !== 'Platform Owner' && !requestUser?.organizationId) {
+      return res.status(403).json({ error: 'A customer organization is required to create users' });
+    }
+    if (['Platform Owner', 'System Administrator', 'Administrator'].includes(roleName) && requestUser?.role !== 'Platform Owner') {
+      return res.status(403).json({ error: 'Only a Platform Owner can assign a platform administration role' });
+    }
 
     // Check if user already exists
     const existingUser = await prisma.user.findUnique({
@@ -135,11 +148,25 @@ export const createUser = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Invalid role specified' });
     }
 
+    if (requestUser?.role !== 'Platform Owner') {
+      const subscription = await prisma.subscription.findFirst({
+        where: { organizationId: requestUser.organizationId, status: { in: ['TRIALING', 'ACTIVE'] } },
+        include: { plan: { select: { maxUsers: true } } },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (!subscription || (subscription.trialEndsAt && subscription.trialEndsAt < new Date())) {
+        return res.status(403).json({ error: 'Your organization does not have an active subscription' });
+      }
+      if (subscription.plan.maxUsers !== null) {
+        const userCount = await prisma.user.count({ where: { organizationId: requestUser.organizationId } });
+        if (userCount >= subscription.plan.maxUsers) {
+          return res.status(403).json({ error: 'Your plan user limit has been reached' });
+        }
+      }
+    }
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Generate verification token
-    const { token: verificationToken, expires: verificationTokenExpires } = generateVerificationToken();
 
     // Create user with optional farm assignment
     const user = await prisma.user.create({
@@ -149,10 +176,9 @@ export const createUser = async (req: Request, res: Response) => {
         firstName,
         lastName,
         roleId: role.id,
+        organizationId: requestUser.organizationId,
         farmId: farmId ? Number(farmId) : null,
-        isVerified: false,
-        verificationToken,
-        verificationTokenExpires,
+        isVerified: true,
       },
       include: {
         role: true,
@@ -166,18 +192,12 @@ export const createUser = async (req: Request, res: Response) => {
       },
     });
 
-    // Send verification email if requested
-    if (sendVerification) {
-      await sendVerificationEmail(email, verificationToken);
-    }
-
     // Remove password from response
     const { password: _, ...safeUser } = user;
 
     res.status(201).json({
       message: 'User created successfully',
       user: safeUser,
-      verificationToken: sendVerification ? verificationToken : undefined,
     });
   } catch (error) {
     console.error('Create user error:', error);
@@ -192,10 +212,14 @@ export const updateUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const { firstName, lastName, roleName, farmId, isActive } = req.body;
+    const requestUser = (req as any).user;
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
-      where: { id: Number(id) },
+      where: {
+        id: Number(id),
+        ...(requestUser?.role === 'Platform Owner' ? {} : { organizationId: requestUser?.organizationId }),
+      },
     });
 
     if (!existingUser) {
@@ -209,11 +233,22 @@ export const updateUser = async (req: Request, res: Response) => {
     if (lastName) updateData.lastName = lastName;
     if (typeof isActive === 'boolean') updateData.isActive = isActive;
     if (farmId !== undefined) {
+      if (farmId && requestUser?.role !== 'Platform Owner') {
+        const farm = await prisma.farm.findFirst({
+          where: { id: Number(farmId), organizationId: requestUser?.organizationId },
+          select: { id: true },
+        });
+        if (!farm) return res.status(400).json({ error: 'Farm does not belong to your organization' });
+      }
+
       updateData.farmId = farmId ? Number(farmId) : null;
     }
 
     // Update role if provided
     if (roleName) {
+      if (['Platform Owner', 'System Administrator', 'Administrator'].includes(roleName) && requestUser?.role !== 'Platform Owner') {
+        return res.status(403).json({ error: 'Only a Platform Owner can assign a platform administration role' });
+      }
       const role = await prisma.role.findUnique({
         where: { name: roleName },
       });
@@ -259,10 +294,14 @@ export const updateUser = async (req: Request, res: Response) => {
 export const deleteUser = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
+    const requestUser = (req as any).user;
 
     // Check if user exists
     const existingUser = await prisma.user.findUnique({
-      where: { id: Number(id) },
+      where: {
+        id: Number(id),
+        ...(requestUser?.role === 'Platform Owner' ? {} : { organizationId: requestUser?.organizationId }),
+      },
     });
 
     if (!existingUser) {
@@ -291,7 +330,11 @@ export const deleteUser = async (req: Request, res: Response) => {
 // ============================================
 export const getAllRoles = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
     const roles = await prisma.role.findMany({
+      where: requestUser?.role === 'Platform Owner'
+        ? {}
+        : { name: { notIn: ['Platform Owner', 'System Administrator', 'Administrator'] } },
       orderBy: { name: 'asc' },
     });
 
@@ -307,19 +350,24 @@ export const getAllRoles = async (req: Request, res: Response) => {
 // ============================================
 export const getUserStats = async (req: Request, res: Response) => {
   try {
+    const requestUser = (req as any).user;
+    const userWhere: any = requestUser?.role === 'Platform Owner'
+      ? {}
+      : { organizationId: requestUser?.organizationId };
     const [totalUsers, activeUsers, inactiveUsers, roles, recentUsers] = await Promise.all([
-      prisma.user.count(),
-      prisma.user.count({ where: { isActive: true } }),
-      prisma.user.count({ where: { isActive: false } }),
+      prisma.user.count({ where: userWhere }),
+      prisma.user.count({ where: { ...userWhere, isActive: true } }),
+      prisma.user.count({ where: { ...userWhere, isActive: false } }),
       prisma.role.findMany({
         include: {
           _count: {
-            select: { users: true },
+            select: { users: { where: userWhere } },
           },
         },
         orderBy: { name: 'asc' },
       }),
       prisma.user.findMany({
+        where: userWhere,
         take: 5,
         orderBy: { createdAt: 'desc' },
         include: {
@@ -335,7 +383,7 @@ export const getUserStats = async (req: Request, res: Response) => {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     const newUsers = await prisma.user.count({
-      where: { createdAt: { gte: thirtyDaysAgo } },
+      where: { ...userWhere, createdAt: { gte: thirtyDaysAgo } },
     });
 
     const totalRoles = roles.length;
